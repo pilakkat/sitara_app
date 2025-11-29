@@ -15,6 +15,21 @@
     opacity: 0.85;
 }
 
+/* Override Bootstrap alerts for dark theme */
+.alert-dark {
+    background-color: rgba(20, 20, 30, 0.8) !important;
+    border-color: rgba(0, 243, 255, 0.5) !important;
+    color: var(--neon-blue) !important;
+}
+
+.alert-dark.border-info {
+    border-color: var(--neon-blue) !important;
+}
+
+.alert-dark.text-info {
+    color: var(--neon-blue) !important;
+}
+
 /* Dashboard HUD Cards */
 .bg-panel {
     background: rgba(10, 10, 10, 0.95);
