@@ -450,3 +450,80 @@ select.form-control-cyber option,
     border-radius: 50%;
     transform: translate(-50%, -50%);
 }
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .hud-card h4 {
+        font-size: 1rem;
+    }
+    
+    #dateSelector {
+        width: 140px !important;
+    }
+}
+
+@media (max-width: 992px) {
+    .hud-card h4 {
+        font-size: 0.95rem;
+    }
+    
+    #dateSelector {
+        width: 130px !important;
+    }
+    
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .hud-card h4 {
+        font-size: 0.9rem;
+        width: 100%;
+    }
+    
+    #dateSelector {
+        width: 120px !important;
+    }
+    
+    /* Stack dashboard controls vertically on mobile */
+    .bg-panel .d-flex.justify-content-between {
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+    
+    .bg-panel .d-flex > div {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 576px) {
+    .hud-card {
+        padding: 1rem;
+    }
+    
+    .hud-card h4 {
+        font-size: 0.85rem;
+    }
+    
+    #dateSelector {
+        width: 110px !important;
+    }
+    
+    .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.75rem;
+    }
+    
+    .btn-mode-toggle {
+        padding-left: 24px !important;
+    }
+    
+    .btn-mode-toggle .mode-indicator {
+        width: 6px;
+        height: 6px;
+        left: 8px;
+    }
+}

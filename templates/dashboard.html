@@ -4,16 +4,18 @@
 <div id="dashboard-view" class="row">
     <div class="col-lg-8">
         <div class="bg-panel hud-card">
-            <div class="d-flex justify-content-between align-items-center mb-3">
-                <div class="d-flex align-items-center gap-2">
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-3">
+                <div class="d-flex flex-wrap align-items-center gap-2">
                     <h4 class="text-neon mb-0">LIVE SPATIAL MAPPING (SLAM)</h4>
-                    <div class="vr mx-2" style="opacity: 0.3;"></div>
-                    <label class="text-secondary small mb-0">ROBOT:</label>
-                    <select id="robotSelector" class="form-select form-select-sm form-control-cyber" style="width: 150px;" onchange="switchRobot()">
-                        <option value="">Loading...</option>
-                    </select>
+                    <div class="vr mx-2 d-none d-xl-block" style="opacity: 0.3;"></div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="text-secondary small mb-0">ROBOT:</label>
+                        <select id="robotSelector" class="form-select form-select-sm form-control-cyber" style="width: 150px;" onchange="switchRobot()">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex flex-wrap align-items-center gap-2">
                     <label class="text-secondary small mb-0 me-2">VIEW DATE:</label>
                     <button id="btnPrevDay" class="btn btn-sm btn-outline-cyber" onclick="navigateDate(-1)" title="Previous Day">◀</button>
                     <input type="date" id="dateSelector" class="form-control form-control-sm form-control-cyber" style="width: 160px;color:var(--neon-blue);">
