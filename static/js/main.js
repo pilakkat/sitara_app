@@ -82,6 +82,33 @@ function updateAllRobotStatuses() {
     });
 }
 
+// Helper function to get robot marker CSS class based on status
+function getRobotMarkerClass(status) {
+    if (!status) return 'status-offline';
+    
+    const statusUpper = status.toUpperCase();
+    
+    if (statusUpper === 'OFFLINE' || statusUpper === 'UNKNOWN') {
+        return 'status-offline';
+    } else if (statusUpper === 'FAULT' || statusUpper.includes('ERROR') || statusUpper.includes('WARN')) {
+        return 'status-fault';
+    } else if (statusUpper === 'CHARGING') {
+        return 'status-charging';
+    } else if (statusUpper === 'BOOTING') {
+        return 'status-booting';
+    } else if (statusUpper === 'STANDBY' || statusUpper === 'IDLE') {
+        return 'status-standby';
+    } else if (statusUpper === 'MOVING') {
+        return 'status-moving';
+    } else if (statusUpper === 'SCANNING') {
+        return 'status-scanning';
+    } else if (statusUpper === 'OPERATIONAL' || statusUpper === 'NOMINAL') {
+        return 'status-operational';
+    } else {
+        return 'status-standby'; // Default
+    }
+}
+
 // Load available robots
 function loadRobots() {
     $.get('/api/robots')
@@ -491,14 +518,20 @@ function updateTelemetryDisplay(data) {
     }
 
     // 5. Move Robot on Map
-    $('#robotMarker').css({
+    const robotMarker = $('#robotMarker');
+    robotMarker.css({
         'top': data.pos_y + '%',
         'left': data.pos_x + '%'
     });
     
+    // Update robot marker color based on status
+    const markerClass = getRobotMarkerClass(data.status);
+    robotMarker.removeClass('status-offline status-fault status-charging status-booting status-standby status-moving status-scanning status-operational');
+    robotMarker.addClass(markerClass);
+    
     // Add rotation if orientation is available
     if (data.orientation !== undefined) {
-        $('#robotMarker').css('transform', `translate(-50%, -50%) rotate(${data.orientation}deg)`);
+        robotMarker.css('transform', `translate(-50%, -50%) rotate(${data.orientation}deg)`);
     }
 }
 

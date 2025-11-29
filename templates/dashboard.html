@@ -30,7 +30,22 @@
             </div>
             <div class="map-container" id="mapZone">
                 <canvas id="pathCanvas" width="600" height="400" style="position: absolute; top: 0; left: 0;"></canvas>
-                <div id="robotMarker" class="robot-marker" style="top: 50%; left: 50%;"></div>
+                <div id="robotMarker" class="robot-marker status-standby" style="top: 50%; left: 50%;">
+                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Head -->
+                        <circle cx="12" cy="4" r="2.5" opacity="0.9"/>
+                        <!-- Body -->
+                        <rect x="10" y="7" width="4" height="7" rx="1" opacity="0.9"/>
+                        <!-- Arms -->
+                        <rect x="6" y="8" width="3.5" height="1.5" rx="0.5" opacity="0.8"/>
+                        <rect x="14.5" y="8" width="3.5" height="1.5" rx="0.5" opacity="0.8"/>
+                        <!-- Legs -->
+                        <rect x="9.5" y="14" width="1.8" height="5" rx="0.5" opacity="0.8"/>
+                        <rect x="12.7" y="14" width="1.8" height="5" rx="0.5" opacity="0.8"/>
+                        <!-- Core highlight -->
+                        <circle cx="12" cy="10" r="1" opacity="0.6"/>
+                    </svg>
+                </div>
             </div>
             
             <!-- Timeline Scrubber -->
