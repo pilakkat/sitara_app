@@ -24,26 +24,70 @@ pip install requests python-dotenv
 
 ## Configuration
 
-The client reads configuration from `config.env` file. Default settings:
+### Quick Setup
 
+1. **Create your personal `.env` file** (not tracked by git):
+```bash
+# Copy the example file
+copy .env.example .env
+
+# Edit .env and add your credentials
+```
+
+2. **Update `.env` with your credentials**:
 ```properties
 SERVER_URL=http://127.0.0.1:5001
-ROBOT_USERNAME=<your_operator_username>
-ROBOT_PASSWORD=<your_operator_password>
+ROBOT_USERNAME=your-operator-username
+ROBOT_PASSWORD=your-operator-password
 ROBOT_ID=1
 ```
 
 **Important:** 
+- The `.env` file is **ignored by git** to protect your credentials
+- Never commit `.env` file to version control
 - Variable names use `ROBOT_USERNAME` and `ROBOT_PASSWORD` to avoid conflicts with Windows system environment variables
 - Each robot client should authenticate as an **operator** user, not as `admin`
-- Replace `<your_operator_username>` and `<your_operator_password>` with your actual credentials
 - Contact your system administrator for operator credentials
 
-You can override these settings via command line arguments or by editing `config.env`.
+### Configuration Priority
+
+The client loads configuration in this order:
+1. **`.env`** - Your personal credentials (highest priority, git-ignored)
+2. **`config.env`** - Default template with placeholders (tracked by git)
+3. **Command line arguments** - Override any setting (highest priority)
+
+### Running Multiple Robots
+
+To run multiple robot clients simultaneously, create separate `.env` files or use command line arguments:
+
+**Option 1: Separate directories**
+```bash
+# Robot 1
+cd client
+python client_app.py
+
+# Robot 2 (in another terminal)
+cd client2
+python client_app.py
+```
+
+**Option 2: Command line override**
+```bash
+# Robot 1
+python client_app.py 1 operator1 password1
+
+# Robot 2
+python client_app.py 2 operator2 password2
+
+# Robot 3
+python client_app.py 3 operator3 password3
+```
+
+You can override these settings via command line arguments.
 
 ## Usage
 
-### Basic Usage (Uses config.env defaults)
+### Basic Usage (Uses .env credentials)
 ```bash
 python client_app.py
 ```

@@ -14,8 +14,14 @@ from threading import Thread, Event
 from dotenv import load_dotenv
 import sys
 
-# Load environment variables from config.env
-load_dotenv('config.env')
+# Load environment variables
+# Priority: .env (personal credentials) -> config.env (defaults/template)
+if os.path.exists('.env'):
+    print("[CONFIG] Loading credentials from .env")
+    load_dotenv('.env')
+else:
+    print("[CONFIG] .env not found, loading from config.env")
+    load_dotenv('config.env')
 
 class RobotClient:
     def __init__(self, server_url, username, password, robot_id=1):
@@ -259,9 +265,21 @@ def main():
     # Configuration from environment variables
     # Note: Using ROBOT_USERNAME/ROBOT_PASSWORD to avoid conflicts with Windows USERNAME env var
     SERVER_URL = os.getenv('SERVER_URL', 'http://127.0.0.1:5001')
-    USERNAME = os.getenv('ROBOT_USERNAME', 'deepak')
-    PASSWORD = os.getenv('ROBOT_PASSWORD', 'S1tara0perat0r')
+    USERNAME = os.getenv('ROBOT_USERNAME')
+    PASSWORD = os.getenv('ROBOT_PASSWORD')
     ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
+    
+    # Validate required credentials
+    if not USERNAME or not PASSWORD:
+        print("\n[ERROR] Missing credentials!")
+        print("Please create a .env file with ROBOT_USERNAME and ROBOT_PASSWORD")
+        print("See .env.example for template")
+        sys.exit(1)
+    
+    if USERNAME.startswith('<') or USERNAME.startswith('your-'):
+        print("\n[ERROR] Please update .env with actual credentials!")
+        print("Current username appears to be a placeholder")
+        sys.exit(1)
     
     # Allow command line override
     if len(sys.argv) > 1:
