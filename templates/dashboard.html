@@ -27,12 +27,60 @@
     <div class="col-lg-4">
         <div class="bg-panel hud-card text-center">
             <h5 class="text-muted">SYSTEM HEALTH</h5>
-            <h1 class="text-neon" id="batteryVal">-- V</h1>
+            <canvas id="batteryChart" height="100"></canvas>
             <small>BATTERY (24V ARCH)</small>
             <hr class="border-secondary">
             <h2 id="tempVal">-- °C</h2>
             <small>CORE TEMP</small>
         </div>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script>
+            const ctx = document.getElementById('batteryChart').getContext('2d');
+            const batteryData = {
+            labels: [],
+            datasets: [{
+                label: 'Voltage (V)',
+                data: [],
+                borderColor: '#00fff7',
+                backgroundColor: 'rgba(0,255,247,0.1)',
+                tension: 0.2,
+                fill: true,
+                pointRadius: 0
+            }]
+            };
+            const batteryChart = new Chart(ctx, {
+            type: 'line',
+            data: batteryData,
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                x: { display: false },
+                y: { beginAtZero: true, suggestedMax: 30 }
+                }
+            }
+            });
+
+            // Expose chart update globally so main.js telemetry polling can push DB values
+            function updateBatteryChart(voltage) {
+            const now = new Date().toLocaleTimeString();
+            if (batteryData.labels.length > 30) {
+                batteryData.labels.shift();
+                batteryData.datasets[0].data.shift();
+            }
+            batteryData.labels.push(now);
+            batteryData.datasets[0].data.push(voltage);
+            batteryChart.update();
+            }
+            window.updateBatteryChart = updateBatteryChart; // Make callable by fetchTelemetry in main.js
+            // Flush any queued battery readings captured before chart init
+            if (window._pendingBattery && window._pendingBattery.length) {
+                window._pendingBattery.forEach(v => updateBatteryChart(v));
+                console.debug('Flushed queued battery readings to chart:', window._pendingBattery);
+                window._pendingBattery = [];
+            }
+        </script>
+        <h1 class="text-neon" id="batteryVal">-- V</h1>
 
         <div class="bg-panel hud-card">
             <h5 class="text-muted">STATUS</h5>

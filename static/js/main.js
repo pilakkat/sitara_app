@@ -48,7 +48,21 @@ $(document).ready(function() {
 function fetchTelemetry() {
     $.getJSON('/api/telemetry', function(data) {
         // 1. Update Numeric Values
-        $('#batteryVal').text(data.battery + ' V');
+        const batteryDisplay = (data.battery == null) ? 'N/A' : data.battery + ' V';
+        $('#batteryVal').text(batteryDisplay);
+        // Feed battery chart if available
+        if (data.battery != null) {
+            if (typeof updateBatteryChart === 'function') {
+                updateBatteryChart(data.battery);
+            } else {
+                // Chart function not ready yet; queue the value for later flush
+                window._pendingBattery = window._pendingBattery || [];
+                window._pendingBattery.push(data.battery);
+                console.debug('Battery value queued until chart initializes:', data.battery);
+            }
+        } else {
+            console.debug('Battery value is null (no telemetry ingested yet).');
+        }
         $('#tempVal').text(data.cpu_temp + ' °C');
         
         // 2. Update Status Badge
