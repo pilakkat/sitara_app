@@ -331,8 +331,7 @@ class RobotClient:
             self.status = "BATTERY LOW"
             self.motor_load = 0
         
-        # Update cycle count
-        self.cycle_count += 1
+        # Note: cycle_count is NOT incremented here - it only increments on power-on
     
     def run_telemetry_loop(self):
         """Main loop for sending telemetry"""
@@ -944,6 +943,11 @@ def control_power():
         robot_client.is_powered_on = True
         robot_client.status = 'BOOTING'
         robot_client.motor_load = 10
+        
+        # Increment cycle count (power-on cycle)
+        robot_client.cycle_count += 1
+        print(f"[ROBOT-{robot_client.robot_id}] Power-on cycle #{robot_client.cycle_count}")
+        
         # Send immediate telemetry
         robot_client.send_telemetry_immediate()
         

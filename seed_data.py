@@ -75,7 +75,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         
         # Simulated values
         current_battery = 24.8
-        cycle_count = 12000
+        cycle_count = 12000  # Starting cycle count (robot's lifetime power-on cycles)
         
         # Track last logged telemetry values for change detection
         last_logged_battery = current_battery
@@ -93,6 +93,26 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         movement_phase = 0  # Different patrol patterns
         idle_until = None   # Track when robot is idle/stationary
         
+        # Power cycle tracking
+        is_powered_on = True  # Robot starts powered on
+        next_power_cycle_time = None  # When next power cycle should occur
+        in_power_cycle = False  # Track if currently in a power cycle sequence
+        power_cycle_boot_time = None  # When to complete boot after power-on
+        
+        # Schedule random power cycles (1-3 per day)
+        power_cycle_schedule = []
+        for day in range(days_to_generate):
+            num_cycles = random.randint(1, 3)  # 1-3 power cycles per day
+            for _ in range(num_cycles):
+                # Random time during the day (not at night when robot should be charging)
+                cycle_hour = random.randint(7, 21)  # Between 7 AM and 9 PM
+                cycle_minute = random.randint(0, 59)
+                cycle_time = start_time + timedelta(days=day, hours=cycle_hour, minutes=cycle_minute)
+                power_cycle_schedule.append(cycle_time)
+        
+        power_cycle_schedule.sort()  # Ensure chronological order
+        print(f"Scheduled {len(power_cycle_schedule)} power cycles over {days_to_generate} days")
+        
         # Loop through time minute by minute
         total_minutes = days_to_generate * 24 * 60
         print(f"Generating {total_minutes} minutes of data...")
@@ -100,9 +120,63 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         for i in range(total_minutes):
             current_step_time = start_time + timedelta(minutes=i)
             
+            # --- HANDLE POWER CYCLES ---
+            # Check if it's time for a scheduled power cycle
+            if power_cycle_schedule and not in_power_cycle:
+                if current_step_time >= power_cycle_schedule[0]:
+                    # Start power cycle: OFFLINE
+                    in_power_cycle = True
+                    is_powered_on = False
+                    power_cycle_boot_time = current_step_time + timedelta(minutes=random.randint(2, 5))  # Boot after 2-5 minutes
+                    power_cycle_schedule.pop(0)  # Remove this cycle from schedule
+                    print(f"Power cycle {cycle_count + 1} started (OFFLINE) at {current_step_time.strftime('%Y-%m-%d %H:%M')}")
+            
+            # Check if it's time to boot after being offline
+            if in_power_cycle and not is_powered_on and current_step_time >= power_cycle_boot_time:
+                # Power back on: BOOTING
+                is_powered_on = True
+                cycle_count += 1  # INCREMENT CYCLE COUNT ON POWER-ON
+                print(f"Power cycle {cycle_count} completed (BOOTING) at {current_step_time.strftime('%Y-%m-%d %H:%M')}")
+                
+                # Log BOOTING status immediately
+                boot_log = TelemetryLog(
+                    robot_id=robot.id,
+                    timestamp=current_step_time,
+                    battery_voltage=round(current_battery, 2),
+                    cpu_temp=40,  # Cool after being off
+                    motor_load=10,  # Low load during boot
+                    cycle_counter=cycle_count,
+                    status_code="BOOTING"
+                )
+                telemetry_buffer.append(boot_log)
+                last_logged_status = "BOOTING"
+                last_telemetry_time = current_step_time
+                
+                # Schedule return to normal operation (after 3 minutes)
+                in_power_cycle = False
+            
             # --- SIMULATE DAY/NIGHT CYCLES (Robot rests at night) ---
             hour_of_day = current_step_time.hour
             is_night = hour_of_day < 6 or hour_of_day >= 22  # 10 PM to 6 AM
+            
+            # Skip operations if powered off
+            if not is_powered_on:
+                # Log OFFLINE status once per 5 minutes
+                if i % TELEMETRY_INTERVAL_MINS == 0:
+                    if last_logged_status != "OFFLINE":
+                        offline_log = TelemetryLog(
+                            robot_id=robot.id,
+                            timestamp=current_step_time,
+                            battery_voltage=round(current_battery, 2),
+                            cpu_temp=25,  # Ambient temp when off
+                            motor_load=0,
+                            cycle_counter=cycle_count,
+                            status_code="OFFLINE"
+                        )
+                        telemetry_buffer.append(offline_log)
+                        last_logged_status = "OFFLINE"
+                        last_telemetry_time = current_step_time
+                continue  # Skip movement and other operations
             
             # Simulate occasional maintenance/idle periods during the day
             if idle_until is None and not is_night and random.random() < 0.001:  # 0.1% chance per minute
@@ -261,7 +335,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                         battery_voltage=round(current_battery, 2),
                         cpu_temp=temp,
                         motor_load=motor_load,
-                        cycle_counter=cycle_count + (i * 60),
+                        cycle_counter=cycle_count,  # Use actual power-on cycle count, not time-based
                         status_code=status
                     )
                     telemetry_buffer.append(log)
