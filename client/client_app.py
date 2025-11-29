@@ -1,6 +1,7 @@
 """
 SITARA Robot Client Application
 Simulates a robot that connects to the server, sends telemetry, and receives commands.
+Includes a minimal web interface for manual control.
 """
 
 import requests
@@ -12,6 +13,7 @@ import os
 from datetime import datetime, timezone
 from threading import Thread, Event
 from dotenv import load_dotenv
+from flask import Flask, render_template_string, request, jsonify
 import sys
 
 # Load environment variables
@@ -22,6 +24,10 @@ if os.path.exists('.env'):
 else:
     print("[CONFIG] .env not found, loading from config.env")
     load_dotenv('config.env')
+
+# Flask app for control interface
+control_app = Flask(__name__)
+robot_client = None  # Will be set after initialization
 
 class RobotClient:
     def __init__(self, server_url, username, password, robot_id=1):
@@ -298,6 +304,451 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] ✓ Client stopped")
 
 
+# Flask routes for control interface
+@control_app.route('/')
+def index():
+    """Serve the control interface"""
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>SITARA Robot Client Control</title>
+        <meta charset="UTF-8">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #fff;
+                padding: 20px;
+                min-height: 100vh;
+            }
+            .container {
+                max-width: 900px;
+                margin: 0 auto;
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                border-radius: 20px;
+                padding: 30px;
+                box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            }
+            h1 {
+                text-align: center;
+                margin-bottom: 10px;
+                font-size: 2.5em;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            }
+            .robot-id {
+                text-align: center;
+                font-size: 1.2em;
+                opacity: 0.9;
+                margin-bottom: 30px;
+            }
+            .section {
+                background: rgba(255, 255, 255, 0.15);
+                border-radius: 15px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            .section h2 {
+                margin-bottom: 15px;
+                font-size: 1.5em;
+                border-bottom: 2px solid rgba(255,255,255,0.3);
+                padding-bottom: 10px;
+            }
+            .control-grid {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+                max-width: 300px;
+                margin: 0 auto;
+            }
+            .btn {
+                background: rgba(255, 255, 255, 0.2);
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                color: #fff;
+                padding: 15px;
+                border-radius: 10px;
+                cursor: pointer;
+                font-size: 1.1em;
+                font-weight: bold;
+                transition: all 0.3s;
+                text-align: center;
+            }
+            .btn:hover {
+                background: rgba(255, 255, 255, 0.3);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+            .btn-special {
+                background: rgba(255, 100, 100, 0.3);
+                border-color: rgba(255, 100, 100, 0.5);
+            }
+            .btn-charge {
+                background: rgba(100, 255, 100, 0.3);
+                border-color: rgba(100, 255, 100, 0.5);
+            }
+            .slider-group {
+                margin: 20px 0;
+            }
+            .slider-group label {
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 10px;
+                font-size: 1.1em;
+            }
+            .slider {
+                width: 100%;
+                height: 8px;
+                border-radius: 5px;
+                background: rgba(255, 255, 255, 0.2);
+                outline: none;
+                -webkit-appearance: none;
+            }
+            .slider::-webkit-slider-thumb {
+                -webkit-appearance: none;
+                appearance: none;
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: #fff;
+                cursor: pointer;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            }
+            .slider::-moz-range-thumb {
+                width: 25px;
+                height: 25px;
+                border-radius: 50%;
+                background: #fff;
+                cursor: pointer;
+                border: none;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            }
+            .status-display {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
+                margin-top: 20px;
+            }
+            .status-item {
+                background: rgba(0, 0, 0, 0.2);
+                padding: 15px;
+                border-radius: 10px;
+                text-align: center;
+            }
+            .status-label {
+                font-size: 0.9em;
+                opacity: 0.8;
+                margin-bottom: 5px;
+            }
+            .status-value {
+                font-size: 1.5em;
+                font-weight: bold;
+            }
+            .special-ops {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+                margin-top: 15px;
+            }
+            .message {
+                text-align: center;
+                padding: 10px;
+                margin-top: 15px;
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.2);
+                display: none;
+            }
+            .message.show {
+                display: block;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 SITARA ROBOT CONTROL</h1>
+            <div class="robot-id">Robot ID: <span id="robotId">Loading...</span></div>
+            
+            <div class="section">
+                <h2>📍 Position Control</h2>
+                <div class="control-grid">
+                    <div></div>
+                    <button class="btn" onclick="moveDirection('up')">▲<br>UP</button>
+                    <div></div>
+                    <button class="btn" onclick="moveDirection('left')">◀<br>LEFT</button>
+                    <button class="btn" onclick="moveDirection('center')">⊙<br>CENTER</button>
+                    <button class="btn" onclick="moveDirection('right')">▶<br>RIGHT</button>
+                    <div></div>
+                    <button class="btn" onclick="moveDirection('down')">▼<br>DOWN</button>
+                    <div></div>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>⚡ System Parameters</h2>
+                <div class="slider-group">
+                    <label>
+                        <span>Battery Voltage</span>
+                        <span id="voltageValue">24.5V</span>
+                    </label>
+                    <input type="range" class="slider" id="voltageSlider" 
+                           min="22" max="25.2" step="0.1" value="24.5"
+                           oninput="updateVoltage(this.value)">
+                </div>
+                <div class="slider-group">
+                    <label>
+                        <span>Temperature</span>
+                        <span id="tempValue">45°C</span>
+                    </label>
+                    <input type="range" class="slider" id="tempSlider" 
+                           min="35" max="85" step="1" value="45"
+                           oninput="updateTemperature(this.value)">
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>🔧 Special Operations</h2>
+                <div class="special-ops">
+                    <button class="btn btn-charge" onclick="specialOp('charging')">🔋 CHARGING</button>
+                    <button class="btn btn-special" onclick="specialOp('turnoff')">⏻ TURN OFF</button>
+                    <button class="btn btn-special" onclick="specialOp('fault')">⚠️ FAULT</button>
+                    <button class="btn" onclick="specialOp('idle')">⏸️ IDLE</button>
+                    <button class="btn" onclick="specialOp('moving')">▶️ MOVING</button>
+                    <button class="btn" onclick="specialOp('scanning')">🔍 SCANNING</button>
+                </div>
+            </div>
+            
+            <div class="section">
+                <h2>📊 Current Status</h2>
+                <div class="status-display">
+                    <div class="status-item">
+                        <div class="status-label">Position</div>
+                        <div class="status-value" id="positionValue">50, 50</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Orientation</div>
+                        <div class="status-value" id="orientationValue">0°</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Battery</div>
+                        <div class="status-value" id="batteryValue">24.5V</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Temperature</div>
+                        <div class="status-value" id="temperatureValue">45°C</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Status</div>
+                        <div class="status-value" id="statusValue">IDLE</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Cycle Count</div>
+                        <div class="status-value" id="cyclesValue">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="message" id="message"></div>
+        </div>
+        
+        <script>
+            function showMessage(text) {
+                const msg = document.getElementById('message');
+                msg.textContent = text;
+                msg.classList.add('show');
+                setTimeout(() => msg.classList.remove('show'), 3000);
+            }
+            
+            function moveDirection(dir) {
+                fetch('/api/control/move', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({direction: dir})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Position updated: ' + dir.toUpperCase());
+                        updateStatus();
+                    }
+                });
+            }
+            
+            function updateVoltage(value) {
+                document.getElementById('voltageValue').textContent = value + 'V';
+                fetch('/api/control/voltage', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({voltage: parseFloat(value)})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) updateStatus();
+                });
+            }
+            
+            function updateTemperature(value) {
+                document.getElementById('tempValue').textContent = value + '°C';
+                fetch('/api/control/temperature', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({temperature: parseInt(value)})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) updateStatus();
+                });
+            }
+            
+            function specialOp(operation) {
+                fetch('/api/control/operation', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({operation: operation})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('Operation: ' + operation.toUpperCase());
+                        updateStatus();
+                    }
+                });
+            }
+            
+            function updateStatus() {
+                fetch('/api/control/status')
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('robotId').textContent = data.robot_id;
+                    document.getElementById('positionValue').textContent = 
+                        data.position.x.toFixed(1) + ', ' + data.position.y.toFixed(1);
+                    document.getElementById('orientationValue').textContent = 
+                        data.position.orientation.toFixed(1) + '°';
+                    document.getElementById('batteryValue').textContent = 
+                        data.battery_voltage.toFixed(2) + 'V';
+                    document.getElementById('temperatureValue').textContent = 
+                        data.temperature.toFixed(1) + '°C';
+                    document.getElementById('statusValue').textContent = data.status;
+                    document.getElementById('cyclesValue').textContent = data.cycle_count;
+                    
+                    // Update sliders
+                    document.getElementById('voltageSlider').value = data.battery_voltage;
+                    document.getElementById('tempSlider').value = data.temperature;
+                });
+            }
+            
+            // Update status every 2 seconds
+            setInterval(updateStatus, 2000);
+            updateStatus();
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
+@control_app.route('/api/control/status')
+def get_status():
+    """Get current robot status"""
+    if robot_client:
+        return jsonify({
+            'robot_id': robot_client.robot_id,
+            'position': robot_client.position,
+            'battery_voltage': robot_client.battery_voltage,
+            'temperature': robot_client.temperature,
+            'status': robot_client.status,
+            'motor_load': robot_client.motor_load,
+            'cycle_count': robot_client.cycle_count
+        })
+    return jsonify({'error': 'Robot not initialized'}), 500
+
+@control_app.route('/api/control/move', methods=['POST'])
+def control_move():
+    """Control robot position"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    direction = data.get('direction', '')
+    step = 5.0
+    
+    if direction == 'up':
+        robot_client.position['y'] = min(100, robot_client.position['y'] + step)
+    elif direction == 'down':
+        robot_client.position['y'] = max(0, robot_client.position['y'] - step)
+    elif direction == 'left':
+        robot_client.position['x'] = max(0, robot_client.position['x'] - step)
+    elif direction == 'right':
+        robot_client.position['x'] = min(100, robot_client.position['x'] + step)
+    elif direction == 'center':
+        robot_client.position['x'] = 50.0
+        robot_client.position['y'] = 50.0
+    
+    return jsonify({'success': True})
+
+@control_app.route('/api/control/voltage', methods=['POST'])
+def control_voltage():
+    """Control battery voltage"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    voltage = data.get('voltage', 24.5)
+    robot_client.battery_voltage = max(22.0, min(25.2, voltage))
+    
+    return jsonify({'success': True})
+
+@control_app.route('/api/control/temperature', methods=['POST'])
+def control_temperature():
+    """Control temperature"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    temp = data.get('temperature', 45)
+    robot_client.temperature = max(35, min(85, temp))
+    
+    return jsonify({'success': True})
+
+@control_app.route('/api/control/operation', methods=['POST'])
+def control_operation():
+    """Control special operations"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    operation = data.get('operation', '').lower()
+    
+    if operation == 'charging':
+        robot_client.status = 'CHARGING'
+        robot_client.motor_load = 0
+        robot_client.battery_voltage = min(25.2, robot_client.battery_voltage + 0.5)
+    elif operation == 'turnoff':
+        robot_client.status = 'OFFLINE'
+        robot_client.motor_load = 0
+    elif operation == 'fault':
+        robot_client.status = 'FAULT'
+        robot_client.motor_load = 0
+    elif operation == 'idle':
+        robot_client.status = 'IDLE'
+        robot_client.motor_load = 0
+    elif operation == 'moving':
+        robot_client.status = 'MOVING'
+        robot_client.motor_load = 65
+    elif operation == 'scanning':
+        robot_client.status = 'SCANNING'
+        robot_client.motor_load = 30
+    
+    return jsonify({'success': True})
+
+def run_control_interface(port):
+    """Run the Flask control interface"""
+    print(f"[CONTROL-UI] Starting web interface on http://127.0.0.1:{port}")
+    control_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+
 def main():
     """Main entry point"""
     print("=" * 60)
@@ -323,6 +774,9 @@ def main():
         print("Current username appears to be a placeholder")
         sys.exit(1)
     
+    # Get control UI port
+    UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5002'))
+    
     # Allow command line override
     if len(sys.argv) > 1:
         ROBOT_ID = int(sys.argv[1])
@@ -330,16 +784,29 @@ def main():
         USERNAME = sys.argv[2]
     if len(sys.argv) > 3:
         PASSWORD = sys.argv[3]
+    if len(sys.argv) > 4:
+        UI_PORT = int(sys.argv[4])
     
     print(f"Configuration:")
     print(f"  Server: {SERVER_URL}")
     print(f"  Robot ID: {ROBOT_ID}")
     print(f"  User: {USERNAME}")
+    print(f"  Control UI: http://127.0.0.1:{UI_PORT}")
     print("=" * 60)
     
     # Create and start client
-    client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
-    client.start()
+    global robot_client
+    robot_client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
+    
+    # Start Flask control interface in a separate thread
+    ui_thread = Thread(target=run_control_interface, args=(UI_PORT,), daemon=True)
+    ui_thread.start()
+    
+    # Give the UI a moment to start
+    time.sleep(1)
+    
+    # Start the robot client (this will block)
+    robot_client.start()
 
 
 if __name__ == "__main__":
