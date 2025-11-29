@@ -70,6 +70,44 @@ class RobotClient:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
             return False
     
+    def fetch_last_position(self):
+        """Fetch the last known position from the server"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/telemetry",
+                params={'robot_id': self.robot_id},
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'pos_x' in data and 'pos_y' in data:
+                    self.position['x'] = data.get('pos_x', 50.0)
+                    self.position['y'] = data.get('pos_y', 50.0)
+                    self.position['orientation'] = data.get('orientation', 0.0)
+                    print(f"[ROBOT-{self.robot_id}] ✓ Restored last position: ({self.position['x']:.1f}, {self.position['y']:.1f}), orientation: {self.position['orientation']:.1f}°")
+                    
+                    # Also restore other state if available
+                    if 'battery' in data:
+                        self.battery_voltage = data.get('battery', 24.5)
+                    if 'cpu_temp' in data:
+                        self.temperature = data.get('cpu_temp', 45.0)
+                    if 'status' in data and data['status'] != 'UNKNOWN':
+                        self.status = data.get('status', 'IDLE')
+                    if 'cycles' in data:
+                        self.cycle_count = data.get('cycles', 0)
+                    
+                    return True
+                else:
+                    print(f"[ROBOT-{self.robot_id}] ℹ No previous position found, using default (50.0, 50.0)")
+                    return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Could not fetch last position (HTTP {response.status_code}), using default")
+                return True  # Continue with defaults
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Error fetching last position: {e}, using default")
+            return True  # Continue with defaults
+    
     def send_telemetry(self):
         """Send current telemetry data to server"""
         try:
@@ -227,6 +265,10 @@ class RobotClient:
         if not self.login():
             print(f"[ROBOT-{self.robot_id}] Cannot start without authentication")
             return False
+        
+        # Fetch last known position from server
+        print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
+        self.fetch_last_position()
         
         self.running = True
         
