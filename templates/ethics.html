@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}AI Ethics & Safety - Sitara Dynamics{% endblock %}
+
+{% block content %}
+<div class="video-bg-container" style="min-height: 100vh; margin-top: -56px;">
+    <video autoplay muted loop playsinline class="bg-video">
+        <source src="{{ url_for('static', filename='video/a_hand_with_glowing_eyes.mp4') }}" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+
+    <div class="content-wrapper container py-5" style="padding-top: 80px !important;">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="text-neon mb-4" style="font-family: var(--font-head);">
+                <i class="bi bi-shield-check me-3"></i>AI ETHICS & SAFETY
+            </h1>
+            <p class="text-secondary mb-4"><small>Our Commitment to Responsible Robotics | Version 1.0</small></p>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">Our Mission</h3>
+                    <p class="text-secondary">
+                        At Sitara Dynamics, we are committed to developing humanoid robotics technology that augments human capability while maintaining the highest ethical standards. We believe advanced robotics should be safe, transparent, and beneficial to society.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">1. Safety First Principles</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Human Safety Priority:</strong> Robot systems are designed with multiple failsafe mechanisms to prevent harm to humans</li>
+                        <li><strong>Emergency Stop Protocol:</strong> All robots feature immediate shutdown capabilities accessible to operators and bystanders</li>
+                        <li><strong>Collision Avoidance:</strong> Advanced sensor arrays detect and prevent collisions with people and objects</li>
+                        <li><strong>Force Limiting:</strong> Actuators are calibrated to limit applied force below injury thresholds</li>
+                        <li><strong>Supervised Operation:</strong> Autonomous functions operate under human oversight with manual override capability</li>
+                        <li><strong>Regular Safety Audits:</strong> Continuous testing and validation of safety systems</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">2. Ethical AI Development</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Transparency:</strong> We document and disclose our AI training methodologies and data sources</li>
+                        <li><strong>Bias Mitigation:</strong> Active monitoring and correction of algorithmic bias in perception and decision systems</li>
+                        <li><strong>Human Autonomy:</strong> Robots are designed to assist, not replace human decision-making in critical scenarios</li>
+                        <li><strong>Accountability:</strong> Clear chains of responsibility for robot actions and decisions</li>
+                        <li><strong>Privacy Respect:</strong> Sensor data handling adheres to strict privacy guidelines; no unauthorized surveillance</li>
+                        <li><strong>Explainability:</strong> Decision-making processes are auditable and interpretable by operators</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">3. Responsible Deployment</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Use Case Restrictions:</strong> Robots are not deployed for weapons systems or unauthorized surveillance</li>
+                        <li><strong>Operator Training:</strong> Mandatory safety and ethics training for all robot operators</li>
+                        <li><strong>Environmental Assessment:</strong> Pre-deployment evaluation of operational environments</li>
+                        <li><strong>Community Engagement:</strong> Consultation with stakeholders affected by robot deployment</li>
+                        <li><strong>Gradual Autonomy:</strong> Phased introduction of autonomous features with extensive testing</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">4. Data Ethics & Privacy</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Minimal Data Collection:</strong> Only operationally necessary sensor data is recorded</li>
+                        <li><strong>Consent-Based Recording:</strong> Visual/audio recording requires explicit consent and clear signaling</li>
+                        <li><strong>Secure Storage:</strong> Encrypted storage and transmission of all operational data</li>
+                        <li><strong>Limited Retention:</strong> Data retention policies aligned with operational needs, not indefinite storage</li>
+                        <li><strong>No Biometric Tracking:</strong> Facial recognition and biometric identification are disabled unless explicitly authorized</li>
+                        <li><strong>Data Subject Rights:</strong> Individuals can request deletion of data captured about them</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">5. Human-Robot Interaction Guidelines</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Clear Robot Identification:</strong> Robots are clearly marked and identifiable as non-human</li>
+                        <li><strong>Predictable Behavior:</strong> Motion planning prioritizes predictability to reduce human anxiety</li>
+                        <li><strong>Communication Protocols:</strong> Visual and audio signals indicate robot status and intentions</li>
+                        <li><strong>Respect for Personal Space:</strong> Appropriate distancing and approach behaviors</li>
+                        <li><strong>Accessibility:</strong> Interfaces designed for diverse users including those with disabilities</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">6. Research & Development Ethics</h3>
+                    <ul class="text-secondary">
+                        <li><strong>Open Research:</strong> Publication of safety-relevant findings in peer-reviewed venues</li>
+                        <li><strong>Dual-Use Awareness:</strong> Assessment of potential misuse scenarios for all capabilities</li>
+                        <li><strong>Ethics Review:</strong> Independent ethics board review of new capabilities</li>
+                        <li><strong>Collaboration:</strong> Participation in industry-wide safety and ethics standards development</li>
+                        <li><strong>Continuous Improvement:</strong> Regular updates to ethical guidelines based on new insights</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">7. Incident Reporting & Response</h3>
+                    <p class="text-secondary">
+                        We maintain a transparent incident reporting system:
+                    </p>
+                    <ul class="text-secondary">
+                        <li>Safety incidents are logged and investigated within 24 hours</li>
+                        <li>Root cause analysis performed for all significant incidents</li>
+                        <li>Corrective actions implemented and communicated to stakeholders</li>
+                        <li>Annual safety report published with anonymized incident data</li>
+                        <li>Whistle-blower protection for employees reporting ethical concerns</li>
+                    </ul>
+                    <p class="text-secondary mt-3">
+                        <strong>Report Safety Concerns:</strong> <span class="text-info">safety@sitaradynamics.com</span><br>
+                        <strong>Ethics Concerns:</strong> <span class="text-info">ethics@sitaradynamics.com</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">8. Regulatory Compliance</h3>
+                    <p class="text-secondary">
+                        Sitara Dynamics complies with:
+                    </p>
+                    <ul class="text-secondary">
+                        <li>ISO 13482 (Safety requirements for personal care robots)</li>
+                        <li>IEC 61508 (Functional safety standards)</li>
+                        <li>Regional data protection regulations (GDPR, equivalent frameworks)</li>
+                        <li>Occupational safety standards for collaborative robotics</li>
+                        <li>Emerging AI governance frameworks</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">Our Commitment</h3>
+                    <p class="text-secondary">
+                        We recognize that robotics technology carries significant responsibility. Sitara Dynamics is committed to maintaining these ethical standards, continuously improving our practices, and contributing to responsible innovation in humanoid robotics.
+                    </p>
+                    <p class="text-secondary mt-3 mb-0">
+                        <strong>Questions or Feedback?</strong> We welcome input on our ethics policies at <span class="text-info">ethics@sitaradynamics.com</span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="text-center mt-5">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-info btn-sm">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

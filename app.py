@@ -71,6 +71,18 @@ def logout():
 def dashboard():
     return render_template('dashboard.html', name=current_user.username)
 
+@app.route('/terms')
+def terms():
+    return render_template('terms.html')
+
+@app.route('/privacy')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/ethics')
+def ethics():
+    return render_template('ethics.html')
+
 # --- APIs (AJAX Hooks) ---
 
 @app.route('/api/telemetry')

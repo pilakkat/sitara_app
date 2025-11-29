@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy - Sitara Dynamics{% endblock %}
+
+{% block content %}
+<div class="video-bg-container" style="min-height: 100vh; margin-top: -56px;">
+    <video autoplay muted loop playsinline class="bg-video">
+        <source src="{{ url_for('static', filename='video/futuristic_tech.mp4') }}" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+
+    <div class="content-wrapper container py-5" style="padding-top: 80px !important;">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="text-neon mb-4" style="font-family: var(--font-head);">PRIVACY POLICY</h1>
+            <p class="text-secondary mb-4"><small>Last Updated: November 29, 2025</small></p>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">1. Information We Collect</h3>
+                    <p class="text-secondary mb-3">
+                        Sitara Dynamics collects several types of information to provide and improve our robotic control platform:
+                    </p>
+                    <h5 class="text-white">Personal Information</h5>
+                    <ul class="text-secondary">
+                        <li>Username and authentication credentials</li>
+                        <li>Contact information (email, phone number)</li>
+                        <li>Organization and role information</li>
+                        <li>Training certifications and credentials</li>
+                    </ul>
+                    <h5 class="text-white mt-3">Technical & Operational Data</h5>
+                    <ul class="text-secondary">
+                        <li>Robot telemetry (position, battery, temperature, load)</li>
+                        <li>Command logs and operation history</li>
+                        <li>System performance metrics</li>
+                        <li>IP addresses and access logs</li>
+                        <li>Browser type and device information</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">2. How We Use Your Information</h3>
+                    <p class="text-secondary">We use the collected information for:</p>
+                    <ul class="text-secondary">
+                        <li><strong>Platform Operation:</strong> Authenticate users and enable robot control functionality</li>
+                        <li><strong>Safety & Monitoring:</strong> Track robot operations and ensure safe usage</li>
+                        <li><strong>Performance Optimization:</strong> Analyze telemetry to improve robot performance</li>
+                        <li><strong>Research & Development:</strong> Advance humanoid robotics technology</li>
+                        <li><strong>Compliance:</strong> Meet legal and regulatory requirements</li>
+                        <li><strong>Communication:</strong> Send operational updates and security alerts</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">3. Data Storage & Security</h3>
+                    <p class="text-secondary">
+                        Your data is stored on secure servers with industry-standard encryption. We implement physical, electronic, and procedural safeguards to protect your information. Robot telemetry data is encrypted in transit and at rest.
+                    </p>
+                    <p class="text-secondary mt-3">
+                        Access to personal information is restricted to authorized personnel who require it for legitimate business purposes.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">4. Data Sharing & Disclosure</h3>
+                    <p class="text-secondary">We do not sell your personal information. We may share data with:</p>
+                    <ul class="text-secondary">
+                        <li><strong>Service Providers:</strong> Third-party vendors assisting with operations</li>
+                        <li><strong>Legal Requirements:</strong> When required by law or to protect safety</li>
+                        <li><strong>Research Partners:</strong> Anonymized data for academic research (with consent)</li>
+                        <li><strong>Business Transfers:</strong> In case of merger, acquisition, or asset sale</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">5. Data Retention</h3>
+                    <p class="text-secondary">
+                        We retain personal information for as long as necessary to provide services and comply with legal obligations. Operational telemetry may be retained for up to 5 years for research and safety analysis purposes.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">6. Your Rights</h3>
+                    <p class="text-secondary">You have the right to:</p>
+                    <ul class="text-secondary">
+                        <li>Access your personal data</li>
+                        <li>Request correction of inaccurate data</li>
+                        <li>Request deletion of your data (subject to legal requirements)</li>
+                        <li>Object to data processing</li>
+                        <li>Export your data in a portable format</li>
+                        <li>Withdraw consent for optional data collection</li>
+                    </ul>
+                    <p class="text-secondary mt-3">
+                        To exercise these rights, contact us at <strong class="text-info">privacy@sitaradynamics.com</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">7. Cookies & Tracking</h3>
+                    <p class="text-secondary">
+                        We use essential cookies for authentication and session management. No third-party tracking or advertising cookies are used on this platform.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">8. Changes to Privacy Policy</h3>
+                    <p class="text-secondary">
+                        We may update this privacy policy periodically. Significant changes will be communicated via email to registered users. Continued use of the platform after changes constitutes acceptance.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">9. Contact Information</h3>
+                    <p class="text-secondary">
+                        For privacy concerns or questions:<br>
+                        <strong class="text-info">Sitara Dynamics Inc.</strong><br>
+                        Bengaluru, Karnataka, India<br>
+                        Email: <strong class="text-info">privacy@sitaradynamics.com</strong>
+                    </p>
+                </div>
+            </div>
+
+            <div class="text-center mt-5">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-info btn-sm">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

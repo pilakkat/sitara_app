@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Use - Sitara Dynamics{% endblock %}
+
+{% block content %}
+<div class="video-bg-container" style="min-height: 100vh; margin-top: -56px;">
+    <video autoplay muted loop playsinline class="bg-video">
+        <source src="{{ url_for('static', filename='video/futuristic_tech.mp4') }}" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+
+    <div class="content-wrapper container py-5" style="padding-top: 80px !important;">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <h1 class="text-neon mb-4" style="font-family: var(--font-head);">TERMS OF USE</h1>
+            <p class="text-secondary mb-4"><small>Last Updated: November 29, 2025</small></p>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">1. Acceptance of Terms</h3>
+                    <p class="text-secondary">
+                        By accessing and using the Sitara Dynamics humanoid robotics platform ("Service"), you accept and agree to be bound by the terms and provision of this agreement. If you do not agree to abide by the above, please do not use this service.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">2. Use License</h3>
+                    <p class="text-secondary">
+                        Permission is granted to temporarily access the Sitara Dynamics control interface for authorized personnel only. This is the grant of a license, not a transfer of title, and under this license you may not:
+                    </p>
+                    <ul class="text-secondary">
+                        <li>Modify or copy the materials</li>
+                        <li>Use the materials for any commercial purpose</li>
+                        <li>Attempt to reverse engineer any software contained on Sitara Dynamics' platform</li>
+                        <li>Remove any copyright or other proprietary notations from the materials</li>
+                        <li>Transfer the materials to another person or "mirror" the materials on any other server</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">3. Robotics Operations & Safety</h3>
+                    <p class="text-secondary">
+                        Users operating humanoid robots through this platform agree to:
+                    </p>
+                    <ul class="text-secondary">
+                        <li>Follow all safety protocols and operational guidelines</li>
+                        <li>Maintain proper training certifications for robot operation</li>
+                        <li>Ensure adequate safety perimeters are established during operation</li>
+                        <li>Report any system malfunctions or safety concerns immediately</li>
+                        <li>Not operate robots in unauthorized environments or conditions</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">4. Data Collection & Telemetry</h3>
+                    <p class="text-secondary">
+                        The platform collects operational telemetry including but not limited to: robot position, sensor data, motor performance metrics, battery status, and operational commands. This data is used for system optimization, safety monitoring, and research purposes.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">5. Liability Disclaimer</h3>
+                    <p class="text-secondary">
+                        Sitara Dynamics shall not be held liable for any damages arising from the use or inability to use the robot control platform, including but not limited to: equipment damage, personal injury, data loss, or business interruption. Users assume full responsibility for safe operation.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">6. Modifications to Terms</h3>
+                    <p class="text-secondary">
+                        Sitara Dynamics reserves the right to revise these terms of use at any time without notice. By using this platform, you are agreeing to be bound by the then current version of these terms of use.
+                    </p>
+                </div>
+            </div>
+
+            <div class="glass-panel mb-4">
+                <div class="card-body">
+                    <h3 class="text-neon mb-3">7. Governing Law</h3>
+                    <p class="text-secondary">
+                        These terms and conditions are governed by and construed in accordance with the laws of India, and you irrevocably submit to the exclusive jurisdiction of the courts in Bengaluru, Karnataka.
+                    </p>
+                </div>
+            </div>
+
+            <div class="text-center mt-5">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-info btn-sm">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

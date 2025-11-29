@@ -35,3 +35,12 @@
     transition: all 1s ease;
 }
 .reveal.active { opacity: 1; transform: translateY(0); }
+
+/* Footer Link Hover Effect */
+.hover-neon {
+    transition: color 0.3s ease;
+}
+.hover-neon:hover {
+    color: var(--neon-blue) !important;
+    text-shadow: 0 0 8px rgba(0, 243, 255, 0.6);
+}
