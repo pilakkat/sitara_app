@@ -203,24 +203,40 @@
 input[type="date"].form-control-cyber {
     background: rgba(0, 20, 40, 0.6);
     border: 1px solid rgba(0, 243, 255, 0.3);
-    color: #fff;
+    color: var(--neon-blue);
     padding: 0.375rem 0.5rem;
     font-family: 'Courier New', monospace;
     font-size: 0.85rem;
     transition: all 0.3s ease;
+    color-scheme: dark;
 }
 
 input[type="date"].form-control-cyber:focus {
     background: rgba(0, 30, 60, 0.8);
     border-color: var(--neon-blue);
     box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
-    color: #fff;
+    color: var(--neon-blue);
     outline: none;
 }
 
 input[type="date"].form-control-cyber::-webkit-calendar-picker-indicator {
     filter: invert(0.7) sepia(1) saturate(5) hue-rotate(160deg);
     cursor: pointer;
+}
+
+input[type="date"].form-control-cyber::-webkit-datetime-edit-text,
+input[type="date"].form-control-cyber::-webkit-datetime-edit-month-field,
+input[type="date"].form-control-cyber::-webkit-datetime-edit-day-field,
+input[type="date"].form-control-cyber::-webkit-datetime-edit-year-field {
+    color: var(--neon-blue);
+}
+
+input[type="date"].form-control-cyber::-webkit-datetime-edit {
+    color: var(--neon-blue);
+}
+
+input[type="date"].form-control-cyber::placeholder {
+    color: rgba(0, 243, 255, 0.5);
 }
 
 .btn-outline-info {
