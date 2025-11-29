@@ -193,8 +193,98 @@ def ethics():
 @app.route('/api/telemetry')
 @login_required
 def api_telemetry():
-    data = get_robot_telemetry()
-    return jsonify(data)
+    """GET endpoint - Returns latest telemetry data for dashboard"""
+    # Get the default robot (you can modify this to support multiple robots)
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify({
+            "battery": 0,
+            "cpu_temp": 0,
+            "load": 0,
+            "status": "NO_ROBOT_FOUND",
+            "pos_x": 50,
+            "pos_y": 50,
+            "cycles": 0
+        })
+    
+    # Get latest telemetry
+    latest_telem = TelemetryLog.query.filter_by(robot_id=robot.id).order_by(TelemetryLog.timestamp.desc()).first()
+    
+    # Get latest position
+    latest_path = PathLog.query.filter_by(robot_id=robot.id).order_by(PathLog.timestamp.desc()).first()
+    
+    if not latest_telem:
+        return jsonify({
+            "battery": 0,
+            "cpu_temp": 0,
+            "load": 0,
+            "status": "NO_DATA",
+            "pos_x": 50,
+            "pos_y": 50,
+            "cycles": 0
+        })
+    
+    return jsonify({
+        "battery": latest_telem.battery_voltage or 0,
+        "cpu_temp": latest_telem.cpu_temp or 0,
+        "load": latest_telem.motor_load or 0,
+        "status": latest_telem.status_code or "UNKNOWN",
+        "pos_x": latest_path.pos_x if latest_path else 50,
+        "pos_y": latest_path.pos_y if latest_path else 50,
+        "orientation": latest_path.orientation if latest_path else 0,
+        "cycles": latest_telem.cycle_counter or 0,
+        "timestamp": latest_telem.timestamp.isoformat() if latest_telem.timestamp else None
+    })
+
+@app.route('/api/path_history')
+@login_required
+def api_path_history():
+    """Returns recent path history for trail visualization"""
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify([])
+    
+    # Get last 100 path points
+    recent_paths = PathLog.query.filter_by(robot_id=robot.id)\
+        .order_by(PathLog.timestamp.desc())\
+        .limit(100)\
+        .all()
+    
+    path_data = [{
+        "x": p.pos_x,
+        "y": p.pos_y,
+        "timestamp": p.timestamp.isoformat()
+    } for p in reversed(recent_paths)]
+    
+    return jsonify(path_data)
+
+@app.route('/api/telemetry_history')
+@login_required
+def api_telemetry_history():
+    """Returns recent telemetry logs for the log terminal"""
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify([])
+    
+    # Get last 50 telemetry logs
+    recent_logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
+        .order_by(TelemetryLog.timestamp.desc())\
+        .limit(50)\
+        .all()
+    
+    log_data = [{
+        "timestamp": log.timestamp.isoformat(),
+        "battery": log.battery_voltage,
+        "temp": log.cpu_temp,
+        "load": log.motor_load,
+        "status": log.status_code,
+        "cycles": log.cycle_counter
+    } for log in reversed(recent_logs)]
+    
+    return jsonify(log_data)
 
 @app.route('/api/command', methods=['POST'])
 @login_required

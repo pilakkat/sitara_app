@@ -6,6 +6,7 @@
         <div class="bg-panel hud-card">
             <h4 class="text-neon">LIVE SPATIAL MAPPING (SLAM)</h4>
             <div class="map-container" id="mapZone">
+                <canvas id="pathCanvas" width="600" height="400" style="position: absolute; top: 0; left: 0;"></canvas>
                 <div id="robotMarker" class="robot-marker" style="top: 50%; left: 50%;"></div>
             </div>
             <div class="mt-3 text-center">
@@ -16,10 +17,9 @@
         </div>
         
         <div class="bg-panel hud-card">
-            <h4 class="text-neon">SYSTEM LOGS</h4>
+            <h4 class="text-neon">TELEMETRY LOGS</h4>
             <div class="log-terminal" id="sysLogs">
-                <div class="log-entry">[S4-CLOUD] Connection Established...</div>
-                <div class="log-entry">[S4-CLOUD] Waiting for S1 telemetry...</div>
+                <div class="log-entry">[S4-CLOUD] Initializing telemetry stream...</div>
             </div>
         </div>
     </div>
@@ -43,6 +43,9 @@
             <div class="progress" style="height: 5px; background: #333;">
                 <div class="progress-bar bg-info" id="loadBar" style="width: 0%"></div>
             </div>
+            <hr class="border-secondary">
+            <p><strong>Cycle Counter:</strong> <span id="cycleVal">0</span></p>
+            <p><strong>Last Update:</strong> <span id="lastUpdate" class="text-muted">--</span></p>
         </div>
     </div>
 </div>
