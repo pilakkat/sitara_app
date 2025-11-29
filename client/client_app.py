@@ -44,8 +44,11 @@ class RobotClient:
         self.battery_voltage = 24.5
         self.temperature = 45.0
         self.motor_load = 0
-        self.status = "IDLE"
+        self.status = "STANDBY"
         self.cycle_count = 0
+        
+        # Track previous state for change detection
+        self.last_telemetry_state = None
         
         # Movement parameters
         self.speed = 1.0  # units per update
@@ -99,7 +102,7 @@ class RobotClient:
                     if 'cpu_temp' in data:
                         self.temperature = data.get('cpu_temp', 45.0)
                     if 'status' in data and data['status'] != 'UNKNOWN':
-                        self.status = data.get('status', 'IDLE')
+                        self.status = data.get('status', 'STANDBY')
                     if 'cycles' in data:
                         self.cycle_count = data.get('cycles', 0)
                     
@@ -115,12 +118,13 @@ class RobotClient:
             return True  # Continue with defaults
     
     def send_telemetry(self):
-        """Send current telemetry data to server"""
+        """Send current telemetry data to server (only if data has changed)"""
         try:
             # Generate timestamp on client side for accurate time tracking
             timestamp = datetime.now(timezone.utc).isoformat()
             
-            telemetry_data = {
+            # Current state (excluding timestamp for comparison)
+            current_state = {
                 'robot_id': self.robot_id,
                 'battery_voltage': round(self.battery_voltage, 2),
                 'temperature': round(self.temperature, 1),
@@ -129,9 +133,17 @@ class RobotClient:
                 'cycle_count': self.cycle_count,
                 'x': round(self.position['x'], 2),
                 'y': round(self.position['y'], 2),
-                'orientation': round(self.position['orientation'], 2),
-                'timestamp': timestamp  # Client-generated timestamp
+                'orientation': round(self.position['orientation'], 2)
             }
+            
+            # Check if state has changed (excluding timestamp)
+            if self.last_telemetry_state == current_state:
+                # No change, skip sending
+                return True
+            
+            # State has changed, prepare telemetry data with timestamp
+            telemetry_data = current_state.copy()
+            telemetry_data['timestamp'] = timestamp
             
             response = self.session.post(
                 f"{self.server_url}/api/robot/telemetry",
@@ -140,6 +152,8 @@ class RobotClient:
             )
             
             if response.status_code == 200:
+                # Update last sent state
+                self.last_telemetry_state = current_state
                 print(f"[ROBOT-{self.robot_id}] → Telemetry sent | Status: {self.status} | Pos: ({self.position['x']:.1f}, {self.position['y']:.1f}) | Battery: {self.battery_voltage:.2f}V")
                 return True
             else:
@@ -190,7 +204,7 @@ class RobotClient:
             self.motor_load = 65
             self.current_command = 'move_forward'
         elif cmd_type == 'stop' or cmd_type == 'halt':
-            self.status = "IDLE"
+            self.status = "STANDBY"
             self.motor_load = 0
             self.current_command = None
         elif cmd_type == 'scan_area':
@@ -227,8 +241,8 @@ class RobotClient:
             self.position['orientation'] = self.position['orientation'] % 360
             self.temperature += 0.05
             
-        elif self.status == "IDLE":
-            # Cool down when idle
+        elif self.status == "STANDBY":
+            # Cool down when on standby
             if self.temperature > 40:
                 self.temperature -= 0.2
             # Battery slowly recovers if not moving
@@ -256,7 +270,7 @@ class RobotClient:
         while self.running and not self.stop_event.is_set():
             self.update_robot_state()
             self.send_telemetry()
-            time.sleep(2)  # Send telemetry every 2 seconds
+            time.sleep(5)  # Send telemetry every 5 seconds
     
     def run_command_loop(self):
         """Loop for checking commands"""
@@ -314,38 +328,60 @@ def index():
     <head>
         <title>SITARA Robot Client Control</title>
         <meta charset="UTF-8">
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
         <style>
+            :root {
+                --bg-dark: #000000;
+                --neon-blue: #00f3ff;
+                --neon-purple: #bc13fe;
+                --dim-blue: #45a29e;
+                --text-main: #ffffff;
+                --text-secondary: #e0e0e0;
+                --text-muted: #b0b0b0;
+                --font-head: 'Orbitron', sans-serif;
+                --font-body: 'Roboto', sans-serif;
+                --glass-bg: rgba(20, 20, 30, 0.75);
+                --glass-border: rgba(0, 243, 255, 0.2);
+                --glass-blur: 15px;
+            }
+            
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: #fff;
+                font-family: var(--font-body);
+                background: var(--bg-dark);
+                background-image: radial-gradient(circle at 20% 50%, rgba(0, 243, 255, 0.05) 0%, transparent 50%),
+                                  radial-gradient(circle at 80% 80%, rgba(188, 19, 254, 0.05) 0%, transparent 50%);
+                color: var(--text-main);
                 padding: 20px;
                 min-height: 100vh;
             }
             .container {
                 max-width: 900px;
                 margin: 0 auto;
-                background: rgba(255, 255, 255, 0.1);
-                backdrop-filter: blur(10px);
+                background: var(--glass-bg);
+                backdrop-filter: blur(var(--glass-blur));
+                border: 1px solid var(--glass-border);
                 border-radius: 20px;
                 padding: 30px;
-                box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
             }
             h1 {
                 text-align: center;
                 margin-bottom: 10px;
                 font-size: 2.5em;
-                text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                font-family: var(--font-head);
+                color: var(--neon-blue);
+                text-shadow: 0 0 20px rgba(0, 243, 255, 0.5);
             }
             .robot-id {
                 text-align: center;
                 font-size: 1.2em;
-                opacity: 0.9;
+                color: var(--text-secondary);
                 margin-bottom: 30px;
             }
             .section {
-                background: rgba(255, 255, 255, 0.15);
+                background: rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(0, 243, 255, 0.2);
                 border-radius: 15px;
                 padding: 20px;
                 margin-bottom: 20px;
@@ -353,7 +389,9 @@ def index():
             .section h2 {
                 margin-bottom: 15px;
                 font-size: 1.5em;
-                border-bottom: 2px solid rgba(255,255,255,0.3);
+                font-family: var(--font-head);
+                color: var(--neon-blue);
+                border-bottom: 2px solid rgba(0, 243, 255, 0.3);
                 padding-bottom: 10px;
             }
             .control-grid {
@@ -363,69 +401,110 @@ def index():
                 max-width: 300px;
                 margin: 0 auto;
             }
-            .btn {
-                background: rgba(255, 255, 255, 0.2);
-                border: 2px solid rgba(255, 255, 255, 0.3);
-                color: #fff;
-                padding: 15px;
-                border-radius: 10px;
-                cursor: pointer;
-                font-size: 1.1em;
-                font-weight: bold;
-                transition: all 0.3s;
-                text-align: center;
-            }
-            .btn:hover {
-                background: rgba(255, 255, 255, 0.3);
-                transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            }
-            .btn:active {
-                transform: translateY(0);
-            }
-            .btn-special {
-                background: rgba(255, 100, 100, 0.3);
-                border-color: rgba(255, 100, 100, 0.5);
-            }
-            .btn-charge {
-                background: rgba(100, 255, 100, 0.3);
-                border-color: rgba(100, 255, 100, 0.5);
-            }
-            .slider-group {
+            .controls-row {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
                 margin: 20px 0;
             }
-            .slider-group label {
+            .control-panel {
                 display: flex;
-                justify-content: space-between;
+                flex-direction: column;
+                align-items: center;
+            }
+            .sliders-container {
+                display: flex;
+                gap: 40px;
+                justify-content: center;
+                align-items: center;
+                min-height: 250px;
+            }
+            .vertical-slider-group {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 15px;
+            }
+            .slider-label {
+                text-align: center;
+                font-size: 0.95em;
+                color: var(--text-muted);
+            }
+            .slider-value {
+                font-size: 1.3em;
+                font-weight: bold;
+                color: var(--neon-blue);
                 margin-bottom: 10px;
-                font-size: 1.1em;
             }
-            .slider {
-                width: 100%;
-                height: 8px;
+            .vertical-slider {
+                writing-mode: bt-lr; /* IE */
+                -webkit-appearance: slider-vertical; /* WebKit */
+                width: 8px;
+                height: 200px;
+                padding: 0;
+                margin: 0;
                 border-radius: 5px;
-                background: rgba(255, 255, 255, 0.2);
+                background: rgba(0, 243, 255, 0.2);
                 outline: none;
-                -webkit-appearance: none;
             }
-            .slider::-webkit-slider-thumb {
+            .vertical-slider::-webkit-slider-thumb {
                 -webkit-appearance: none;
                 appearance: none;
                 width: 25px;
                 height: 25px;
                 border-radius: 50%;
-                background: #fff;
+                background: var(--neon-blue);
                 cursor: pointer;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                box-shadow: 0 0 10px var(--neon-blue);
             }
-            .slider::-moz-range-thumb {
+            .vertical-slider::-moz-range-thumb {
                 width: 25px;
                 height: 25px;
                 border-radius: 50%;
-                background: #fff;
+                background: var(--neon-blue);
                 cursor: pointer;
                 border: none;
-                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                box-shadow: 0 0 10px var(--neon-blue);
+            }
+            .btn {
+                background: rgba(0, 243, 255, 0.1);
+                border: 1px solid var(--neon-blue);
+                color: var(--neon-blue);
+                padding: 15px;
+                border-radius: 10px;
+                cursor: pointer;
+                font-size: 1.1em;
+                font-weight: bold;
+                font-family: var(--font-head);
+                transition: all 0.3s;
+                text-align: center;
+            }
+            .btn:hover {
+                background: var(--neon-blue);
+                color: #000;
+                transform: translateY(-2px);
+                box-shadow: 0 0 20px var(--neon-blue);
+            }
+            .btn:active {
+                transform: translateY(0);
+            }
+            .btn-special {
+                background: rgba(255, 100, 100, 0.1);
+                border-color: rgba(255, 100, 100, 0.8);
+                color: rgba(255, 150, 150, 1);
+            }
+            .btn-special:hover {
+                background: rgba(255, 100, 100, 0.3);
+                color: #fff;
+            }
+            .btn-charge {
+                background: rgba(100, 255, 100, 0.1);
+                border-color: rgba(100, 255, 100, 0.8);
+                color: rgba(100, 255, 100, 1);
+            }
+            .btn-charge:hover {
+                background: rgba(100, 255, 100, 0.3);
+                color: #000;
             }
             .status-display {
                 display: grid;
@@ -434,14 +513,15 @@ def index():
                 margin-top: 20px;
             }
             .status-item {
-                background: rgba(0, 0, 0, 0.2);
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid rgba(0, 243, 255, 0.2);
                 padding: 15px;
                 border-radius: 10px;
                 text-align: center;
             }
             .status-label {
                 font-size: 0.9em;
-                opacity: 0.8;
+                color: var(--text-muted);
                 margin-bottom: 5px;
             }
             .status-value {
@@ -472,40 +552,42 @@ def index():
             <h1>🤖 SITARA ROBOT CONTROL</h1>
             <div class="robot-id">Robot ID: <span id="robotId">Loading...</span></div>
             
-            <div class="section">
-                <h2>📍 Position Control</h2>
-                <div class="control-grid">
-                    <div></div>
-                    <button class="btn" onclick="moveDirection('up')">▲<br>UP</button>
-                    <div></div>
-                    <button class="btn" onclick="moveDirection('left')">◀<br>LEFT</button>
-                    <button class="btn" onclick="moveDirection('center')">⊙<br>CENTER</button>
-                    <button class="btn" onclick="moveDirection('right')">▶<br>RIGHT</button>
-                    <div></div>
-                    <button class="btn" onclick="moveDirection('down')">▼<br>DOWN</button>
-                    <div></div>
+            <div class="controls-row">
+                <div class="control-panel">
+                    <h2>📍 Position Control</h2>
+                    <div class="control-grid">
+                        <div></div>
+                        <button class="btn" onclick="moveDirection('up')">▲<br>UP</button>
+                        <div></div>
+                        <button class="btn" onclick="moveDirection('left')">◀<br>LEFT</button>
+                        <div></div>
+                        <button class="btn" onclick="moveDirection('right')">▶<br>RIGHT</button>
+                        <div></div>
+                        <button class="btn" onclick="moveDirection('down')">▼<br>DOWN</button>
+                        <div></div>
+                    </div>
                 </div>
-            </div>
-            
-            <div class="section">
-                <h2>⚡ System Parameters</h2>
-                <div class="slider-group">
-                    <label>
-                        <span>Battery Voltage</span>
-                        <span id="voltageValue">24.5V</span>
-                    </label>
-                    <input type="range" class="slider" id="voltageSlider" 
-                           min="22" max="25.2" step="0.1" value="24.5"
-                           oninput="updateVoltage(this.value)">
-                </div>
-                <div class="slider-group">
-                    <label>
-                        <span>Temperature</span>
-                        <span id="tempValue">45°C</span>
-                    </label>
-                    <input type="range" class="slider" id="tempSlider" 
-                           min="35" max="85" step="1" value="45"
-                           oninput="updateTemperature(this.value)">
+                
+                <div class="control-panel">
+                    <h2>⚡ System Parameters</h2>
+                    <div class="sliders-container">
+                        <div class="vertical-slider-group">
+                            <div class="slider-label">Battery Voltage</div>
+                            <div class="slider-value" id="voltageValue">24.5V</div>
+                            <input type="range" class="vertical-slider" id="voltageSlider" 
+                                   min="22" max="25.2" step="0.1" value="24.5"
+                                   orient="vertical"
+                                   oninput="updateVoltage(this.value)">
+                        </div>
+                        <div class="vertical-slider-group">
+                            <div class="slider-label">Temperature</div>
+                            <div class="slider-value" id="tempValue">45°C</div>
+                            <input type="range" class="vertical-slider" id="tempSlider" 
+                                   min="35" max="85" step="1" value="45"
+                                   orient="vertical"
+                                   oninput="updateTemperature(this.value)">
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -515,7 +597,7 @@ def index():
                     <button class="btn btn-charge" onclick="specialOp('charging')">🔋 CHARGING</button>
                     <button class="btn btn-special" onclick="specialOp('turnoff')">⏻ TURN OFF</button>
                     <button class="btn btn-special" onclick="specialOp('fault')">⚠️ FAULT</button>
-                    <button class="btn" onclick="specialOp('idle')">⏸️ IDLE</button>
+                    <button class="btn" onclick="specialOp('standby')">⏸️ STANDBY</button>
                     <button class="btn" onclick="specialOp('moving')">▶️ MOVING</button>
                     <button class="btn" onclick="specialOp('scanning')">🔍 SCANNING</button>
                 </div>
@@ -542,7 +624,7 @@ def index():
                     </div>
                     <div class="status-item">
                         <div class="status-label">Status</div>
-                        <div class="status-value" id="statusValue">IDLE</div>
+                        <div class="status-value" id="statusValue">STANDBY</div>
                     </div>
                     <div class="status-item">
                         <div class="status-label">Cycle Count</div>
@@ -640,8 +722,8 @@ def index():
                 });
             }
             
-            // Update status every 2 seconds
-            setInterval(updateStatus, 2000);
+            // Update status every 5 seconds
+            setInterval(updateStatus, 5000);
             updateStatus();
         </script>
     </body>
@@ -672,12 +754,12 @@ def control_move():
     
     data = request.json
     direction = data.get('direction', '')
-    step = 5.0
+    step = 2.0  # Slower step changes
     
     if direction == 'up':
-        robot_client.position['y'] = min(100, robot_client.position['y'] + step)
+        robot_client.position['y'] = max(0, robot_client.position['y'] - step)  # UP decreases Y
     elif direction == 'down':
-        robot_client.position['y'] = max(0, robot_client.position['y'] - step)
+        robot_client.position['y'] = min(100, robot_client.position['y'] + step)  # DOWN increases Y
     elif direction == 'left':
         robot_client.position['x'] = max(0, robot_client.position['x'] - step)
     elif direction == 'right':
@@ -724,15 +806,14 @@ def control_operation():
     if operation == 'charging':
         robot_client.status = 'CHARGING'
         robot_client.motor_load = 0
-        robot_client.battery_voltage = min(25.2, robot_client.battery_voltage + 0.5)
     elif operation == 'turnoff':
         robot_client.status = 'OFFLINE'
         robot_client.motor_load = 0
     elif operation == 'fault':
         robot_client.status = 'FAULT'
         robot_client.motor_load = 0
-    elif operation == 'idle':
-        robot_client.status = 'IDLE'
+    elif operation == 'standby':
+        robot_client.status = 'STANDBY'
         robot_client.motor_load = 0
     elif operation == 'moving':
         robot_client.status = 'MOVING'
@@ -778,14 +859,19 @@ def main():
     UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5002'))
     
     # Allow command line override
-    if len(sys.argv) > 1:
-        ROBOT_ID = int(sys.argv[1])
-    if len(sys.argv) > 2:
-        USERNAME = sys.argv[2]
-    if len(sys.argv) > 3:
-        PASSWORD = sys.argv[3]
-    if len(sys.argv) > 4:
-        UI_PORT = int(sys.argv[4])
+    # Usage: python client_app.py [robot_id] [username] [password] [--port PORT]
+    import argparse
+    parser = argparse.ArgumentParser(description='SITARA Robot Client')
+    parser.add_argument('robot_id', type=int, nargs='?', default=ROBOT_ID, help='Robot ID')
+    parser.add_argument('username', nargs='?', default=USERNAME, help='Username')
+    parser.add_argument('password', nargs='?', default=PASSWORD, help='Password')
+    parser.add_argument('--port', '-p', type=int, default=UI_PORT, help='Control UI port (default: 5002)')
+    args = parser.parse_args()
+    
+    ROBOT_ID = args.robot_id
+    USERNAME = args.username or USERNAME
+    PASSWORD = args.password or PASSWORD
+    UI_PORT = args.port
     
     print(f"Configuration:")
     print(f"  Server: {SERVER_URL}")
