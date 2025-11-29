@@ -142,3 +142,59 @@
     color: var(--neon-blue) !important;
     text-shadow: 0 0 8px rgba(0, 243, 255, 0.6);
 }
+
+/* Login Page Styles */
+.login-container {
+    min-height: 80vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: radial-gradient(circle at center, rgba(0, 50, 100, 0.1), rgba(0, 0, 0, 0.9));
+}
+
+.login-card {
+    background: rgba(10, 10, 10, 0.95);
+    border: 2px solid rgba(0, 243, 255, 0.4);
+    border-radius: 12px;
+    box-shadow: 0 0 30px rgba(0, 243, 255, 0.2), 0 8px 32px rgba(0, 0, 0, 0.8);
+    max-width: 450px;
+    width: 100%;
+    backdrop-filter: blur(10px);
+}
+
+.login-card .card-body {
+    padding: 2.5rem 2rem;
+}
+
+.form-control-cyber {
+    background: rgba(0, 20, 40, 0.6);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    color: #fff;
+    padding: 0.75rem 1rem;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
+}
+
+.form-control-cyber:focus {
+    background: rgba(0, 30, 60, 0.8);
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+    color: #fff;
+    outline: none;
+}
+
+.form-control-cyber::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.login-card h2 {
+    font-size: 1.8rem;
+    letter-spacing: 3px;
+}
+
+.login-card .btn-cyber {
+    font-size: 1rem;
+    letter-spacing: 2px;
+    font-weight: 600;
+}
