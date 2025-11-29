@@ -9,29 +9,34 @@
                     🔐
                 </div>
                 <h2 class="text-neon mb-2 mt-3">SECURE ACCESS</h2>
-                <p class="text-muted small mb-0" style="letter-spacing: 1px;">RESTRICTED AREA: AUTHORIZED PERSONNEL ONLY</p>
+                <p class="small mb-0" style="letter-spacing: 1px; color: rgba(200, 200, 200, 0.8);">RESTRICTED AREA: AUTHORIZED PERSONNEL ONLY</p>
             </div>
             
             <form action="/login" method="POST">
                 <div class="mb-3 text-start">
-                    <label class="form-label text-white-50 small" style="letter-spacing: 1px;">OPERATOR ID</label>
+                    <label class="form-label small" style="letter-spacing: 1px; color: rgba(200, 200, 200, 0.8);">OPERATOR ID</label>
                     <input type="text" name="username" class="form-control form-control-cyber" placeholder="Enter username" required autocomplete="username">
                 </div>
                 
                 <div class="mb-4 text-start">
-                    <label class="form-label text-white-50 small" style="letter-spacing: 1px;">ACCESS KEY</label>
+                    <label class="form-label small" style="letter-spacing: 1px; color: rgba(200, 200, 200, 0.8);">ACCESS KEY</label>
                     <input type="password" name="password" class="form-control form-control-cyber" placeholder="Enter password" required autocomplete="current-password">
                 </div>
                 
-                <button type="submit" class="btn btn-cyber w-100 py-2 mb-3">
-                    <span style="letter-spacing: 2px;">⚡ INITIATE SESSION</span>
-                </button>
+                <div class="d-grid gap-2">
+                    <button type="submit" class="btn btn-cyber py-2">
+                        <span style="letter-spacing: 2px;">⚡ INITIATE SESSION</span>
+                    </button>
+                    <a href="{{ url_for('index') }}" class="btn btn-cyber py-2">
+                        <span style="letter-spacing: 2px;">🏠 RETURN TO HOME</span>
+                    </a>
+                </div>
             </form>
             
             <div class="mt-4 pt-3 border-top border-secondary">
-                <small class="text-muted" style="font-size: 0.7em; letter-spacing: 0.5px;">
+                <small style="font-size: 0.7em; letter-spacing: 0.5px; color: rgba(180, 180, 180, 0.7);">
                     <i class="bi bi-shield-lock"></i> SITARA DYNAMICS SECURITY PROTOCOL v4.2<br>
-                    <span style="color: rgba(255, 100, 100, 0.6);">⚠ UNAUTHORIZED ACCESS WILL BE LOGGED</span>
+                    <span style="color: rgba(255, 120, 120, 0.8);">⚠ UNAUTHORIZED ACCESS WILL BE LOGGED</span>
                 </small>
             </div>
         </div>
@@ -83,6 +88,21 @@
         0% { box-shadow: 0 0 0 rgba(0, 243, 255, 0); }
         50% { box-shadow: 0 0 20px rgba(0, 243, 255, 0.4); }
         100% { box-shadow: 0 0 15px rgba(0, 243, 255, 0.3); }
+    }
+    
+    /* Cancel button styling */
+    .btn-outline-secondary {
+        background: rgba(50, 50, 50, 0.3);
+        border: 1px solid rgba(150, 150, 150, 0.4);
+        color: rgba(200, 200, 200, 0.8);
+        transition: all 0.3s ease;
+    }
+    
+    .btn-outline-secondary:hover {
+        background: rgba(80, 80, 80, 0.5);
+        border-color: rgba(200, 200, 200, 0.6);
+        color: rgba(255, 255, 255, 0.9);
+        box-shadow: 0 0 10px rgba(150, 150, 150, 0.2);
     }
 </style>
 {% endblock %}

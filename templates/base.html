@@ -15,14 +15,14 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-panel border-bottom border-secondary">
         <div class="container-fluid">
-            <a class="navbar-brand text-neon" href="#">
+            <a class="navbar-brand text-neon" href="{{ url_for('index') }}">
                 <i class="bi bi-cpu"></i> SITARA DYNAMICS
             </a>
             <div class="d-flex">
                 {% if current_user.is_authenticated %}
                     <span class="navbar-text me-3">OP: {{ current_user.username }}</span>
                     <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-danger">DISCONNECT</a>
-                {% else %}
+                {% elif request.endpoint != 'login' %}
                     <a href="{{ url_for('login') }}" class="btn btn-sm btn-cyber">LOGIN</a>
                 {% endif %}
             </div>
