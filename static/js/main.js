@@ -13,6 +13,12 @@ let pollingIntervals = [];
 let batteryChart = null;
 let tempChart = null;
 
+// Timeline scrubber state
+let timelineData = [];
+let currentTimelineIndex = 0;
+let isTimelineDragging = false;
+let timelineAutoUpdate = true;
+
 // Ensure functions are available globally for button onclick events
 window.sendCommand = function(cmd) {
     console.log("Attempting to send command:", cmd);
@@ -45,6 +51,7 @@ window.loadHistoricalData = function() {
     
     console.log("Loading historical data for:", selectedDate);
     isLiveMode = false;
+    timelineAutoUpdate = false; // Disable auto-update for historical mode
     
     // Stop live polling
     stopPolling();
@@ -63,6 +70,7 @@ window.loadHistoricalData = function() {
 window.loadLiveData = function() {
     console.log("Returning to live mode");
     isLiveMode = true;
+    timelineAutoUpdate = true; // Enable auto-update for live mode
     
     // Clear date selector
     $('#dateSelector').val('');
@@ -82,6 +90,9 @@ $(document).ready(function() {
         
         // Initialize canvas for path visualization
         initPathCanvas();
+        
+        // Initialize timeline scrubber
+        initTimeline();
         
         // Initialize health charts
         initHealthCharts();
@@ -237,6 +248,9 @@ function fetchPathHistory() {
         
         pathHistory = data;
         drawPath();
+        
+        // Update timeline with path data
+        updateTimelineData(data);
     }).fail(function() {
         console.warn("Path history endpoint unreachable.");
     });
@@ -251,11 +265,15 @@ function fetchHistoricalPath(date) {
             console.warn("No path data for this date");
             pathHistory = [];
             clearCanvas();
+            updateTimelineData([]); // Clear timeline
             return;
         }
         
         pathHistory = data;
         drawPath();
+        
+        // Update timeline with historical data
+        updateTimelineData(data);
     }).fail(function() {
         console.warn("Path history endpoint unreachable.");
     });
@@ -597,4 +615,152 @@ function updateHealthCharts(data) {
     tempChart.update('none');
     
     console.log("Temperature chart updated");
+}
+
+/**
+ * Initialize timeline scrubber
+ */
+function initTimeline() {
+    const track = document.getElementById('timelineTrack');
+    const handle = document.getElementById('timelineHandle');
+    
+    if (!track || !handle) {
+        console.error("Timeline elements not found");
+        return;
+    }
+    
+    console.log("Initializing timeline scrubber...");
+    
+    // Mouse/Touch event handlers
+    let startX, startLeft;
+    
+    const onDragStart = (e) => {
+        isTimelineDragging = true;
+        timelineAutoUpdate = false;
+        
+        const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+        startX = clientX;
+        startLeft = handle.offsetLeft;
+        
+        handle.style.cursor = 'grabbing';
+        e.preventDefault();
+    };
+    
+    const onDrag = (e) => {
+        if (!isTimelineDragging) return;
+        
+        const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+        const trackRect = track.getBoundingClientRect();
+        const relativeX = clientX - trackRect.left;
+        const percent = Math.max(0, Math.min(100, (relativeX / trackRect.width) * 100));
+        
+        updateTimelinePosition(percent);
+        e.preventDefault();
+    };
+    
+    const onDragEnd = () => {
+        if (!isTimelineDragging) return;
+        
+        isTimelineDragging = false;
+        handle.style.cursor = 'grab';
+    };
+    
+    // Click on track to jump
+    track.addEventListener('click', (e) => {
+        if (e.target === handle) return;
+        
+        const trackRect = track.getBoundingClientRect();
+        const relativeX = e.clientX - trackRect.left;
+        const percent = (relativeX / trackRect.width) * 100;
+        
+        timelineAutoUpdate = false;
+        updateTimelinePosition(percent);
+    });
+    
+    // Mouse events
+    handle.addEventListener('mousedown', onDragStart);
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', onDragEnd);
+    
+    // Touch events
+    handle.addEventListener('touchstart', onDragStart);
+    document.addEventListener('touchmove', onDrag);
+    document.addEventListener('touchend', onDragEnd);
+    
+    console.log("Timeline scrubber initialized");
+}
+
+/**
+ * Update timeline position and corresponding robot position
+ */
+function updateTimelinePosition(percent) {
+    const handle = document.getElementById('timelineHandle');
+    const progress = document.getElementById('timelineProgress');
+    
+    if (!handle || !progress) return;
+    
+    // Clamp percentage
+    percent = Math.max(0, Math.min(100, percent));
+    
+    // Update visual position
+    handle.style.left = percent + '%';
+    progress.style.width = percent + '%';
+    
+    // Update data index
+    if (timelineData.length > 0) {
+        currentTimelineIndex = Math.floor((percent / 100) * (timelineData.length - 1));
+        updateRobotPositionFromTimeline(currentTimelineIndex);
+    }
+}
+
+/**
+ * Update robot position based on timeline index
+ */
+function updateRobotPositionFromTimeline(index) {
+    if (!timelineData || timelineData.length === 0) return;
+    
+    index = Math.max(0, Math.min(timelineData.length - 1, index));
+    const dataPoint = timelineData[index];
+    
+    // Update robot marker position
+    $('#robotMarker').css({
+        'top': dataPoint.y + '%',
+        'left': dataPoint.x + '%'
+    });
+    
+    // Update current time display
+    const timestamp = new Date(dataPoint.timestamp);
+    $('#timelineCurrent').text(timestamp.toLocaleTimeString());
+    
+    // Update info text
+    const pointNum = index + 1;
+    $('#timelineInfo').text(`Point ${pointNum} of ${timelineData.length}`);
+}
+
+/**
+ * Update timeline data when path history changes
+ */
+function updateTimelineData(pathData) {
+    if (!pathData || pathData.length === 0) return;
+    
+    console.log("Updating timeline with", pathData.length, "data points");
+    
+    timelineData = pathData;
+    
+    // Update start/end time labels
+    if (timelineData.length > 0) {
+        const startTime = new Date(timelineData[0].timestamp);
+        const endTime = new Date(timelineData[timelineData.length - 1].timestamp);
+        
+        $('#timelineStart').text(startTime.toLocaleTimeString());
+        $('#timelineEnd').text(endTime.toLocaleTimeString());
+        $('#timelineDataPoints').text(timelineData.length + ' data points');
+    }
+    
+    // Auto-update to latest position if enabled
+    if (timelineAutoUpdate && isLiveMode) {
+        currentTimelineIndex = timelineData.length - 1;
+        const percent = (currentTimelineIndex / (timelineData.length - 1)) * 100;
+        updateTimelinePosition(percent);
+    }
 }
