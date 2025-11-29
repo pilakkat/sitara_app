@@ -9,6 +9,12 @@
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
 }
 
+/* Override Bootstrap text-muted for dark theme */
+.text-muted {
+    color: var(--text-muted) !important;
+    opacity: 0.85;
+}
+
 /* Dashboard HUD Cards */
 .bg-panel {
     background: rgba(10, 10, 10, 0.95);
