@@ -549,8 +549,15 @@ function updateTelemetryDisplay(data) {
     robotMarker.addClass(markerClass);
     
     // Add rotation if orientation is available
+    // Note: orientation 0° = pointing right, 90° = pointing down, etc.
     if (data.orientation !== undefined) {
-        robotMarker.css('transform', `translate(-50%, -50%) rotate(${data.orientation}deg)`);
+        // Combine translate (for centering) with rotate (for orientation)
+        // Subtract 90 to make 0° point upward instead of rightward
+        const rotation = data.orientation - 90;
+        robotMarker.css('transform', `translate(-50%, -50%) rotate(${rotation}deg)`);
+    } else {
+        // Keep centering even without orientation
+        robotMarker.css('transform', 'translate(-50%, -50%)');
     }
 }
 
@@ -1111,6 +1118,14 @@ function updateRobotPositionFromTimeline(index) {
         'top': dataPoint.y + '%',
         'left': dataPoint.x + '%'
     });
+    
+    // Update robot marker rotation if orientation is available
+    if (dataPoint.orientation !== undefined) {
+        const rotation = dataPoint.orientation - 90;
+        $('#robotMarker').css('transform', `translate(-50%, -50%) rotate(${rotation}deg)`);
+    } else {
+        $('#robotMarker').css('transform', 'translate(-50%, -50%)');
+    }
     
     // Update current time display
     const timestamp = new Date(dataPoint.timestamp);
