@@ -2,7 +2,8 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
-import random, datetime, os
+from datetime import datetime, timedelta, timezone
+import random, os
 
 # Load environment variables from .env file
 load_dotenv()
@@ -27,17 +28,121 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(150), nullable=False) # In prod, hash this!
 
-# --- Mock Data Generator (Simulating Robot S1/S2 Streams) ---
+# --- 1. Robot Identity (The "Thing") ---
+class Robot(db.Model):
+    __tablename__ = 'robots'
+    id = db.Column(db.Integer, primary_key=True)
+    serial_number = db.Column(db.String(50), unique=True, nullable=False)
+    model_type = db.Column(db.String(20), default="32DOF-HUMANOID")
+    # Link to the user (Operator)
+    assigned_to = db.Column(db.Integer, db.ForeignKey('user.id'))
+    
+    # Relationships
+    telemetry = db.relationship('TelemetryLog', backref='robot', lazy='dynamic')
+    path_history = db.relationship('PathLog', backref='robot', lazy='dynamic')
+
+# --- 2. Health & Status (The "Slow" Time Series) ---
+class TelemetryLog(db.Model):
+    __tablename__ = 'telemetry_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    robot_id = db.Column(db.Integer, db.ForeignKey('robots.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc), index=True) # Indexed for speed
+    
+    # The Data Points
+    battery_voltage = db.Column(db.Float)   # e.g., 24.5
+    cpu_temp = db.Column(db.Integer)        # e.g., 65
+    motor_load = db.Column(db.Integer)      # e.g., 40 (%)
+    cycle_counter = db.Column(db.BigInteger)# Operation Time in seconds
+    status_code = db.Column(db.String(20))  # e.g., "NOMINAL", "ERR_JOINT_4"
+
+# --- 3. Map/Spatial History (The "Fast" Time Series) ---
+class PathLog(db.Model):
+    __tablename__ = 'path_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    robot_id = db.Column(db.Integer, db.ForeignKey('robots.id'), nullable=False)
+    timestamp = db.Column(db.DateTime, default=datetime.now(timezone.utc), index=True)
+    
+    # Spatial Data (Normalized 0-100% or Meters)
+    pos_x = db.Column(db.Float)
+    pos_y = db.Column(db.Float)
+    orientation = db.Column(db.Float)       # Heading in degrees (0-360)
+
+
+# --- Data from S1/S2 Streams) ---
+@app.route('/api/telemetry', methods=['POST'])
+@login_required 
 def get_robot_telemetry():
-    # Simulating data from the 32 DOF Humanoid
-    return {
-        "battery": round(random.uniform(20.5, 25.2), 1), # Volts (24V arch)
-        "cpu_temp": random.randint(45, 65),              # Celsius
-        "status": "OPERATIONAL" if random.random() > 0.1 else "CALIBRATING",
-        "load": random.randint(10, 85),                  # Motor Load %
-        "pos_x": random.randint(10, 90),                 # Map % coordinates
-        "pos_y": random.randint(10, 90)
-    }
+    data = request.json
+    robot_serial = data.get('serial') # Assume S1 sends this
+    
+    robot = Robot.query.filter_by(serial_number=robot_serial).first()
+    if not robot:
+        return jsonify({"error": "Unknown Robot"}), 404
+
+    # --- CONSTRAINT 1: Cooldown & Change Detection ---
+    # Get the last log for this robot
+    last_log = TelemetryLog.query.filter_by(robot_id=robot.id).order_by(TelemetryLog.timestamp.desc()).first()
+    
+    should_log = False
+    current_time = datetime.utcnow()
+
+    if not last_log:
+        should_log = True
+    else:
+        # Check time difference (Cooldown)
+        time_diff = (current_time - last_log.timestamp).total_seconds()
+        
+        # Check if values changed significantly
+        values_changed = (
+            abs(last_log.battery_voltage - data['battery']) > 0.1 or 
+            abs(last_log.cpu_temp - data['cpu_temp']) > 1 or
+            last_log.status_code != data['status']
+        )
+
+        # Logic: Log if (Time > 1 min AND Values Changed) OR (Time > 1 hour [KeepAlive])
+        if time_diff > 60 and values_changed:
+            should_log = True
+        elif time_diff > 3600: # Force a log every hour even if nothing changes
+            should_log = True
+
+    if should_log:
+        new_log = TelemetryLog(
+            robot_id=robot.id,
+            battery_voltage=data['battery'],
+            cpu_temp=data['cpu_temp'],
+            motor_load=data['load'],
+            cycle_counter=data['cycles'],
+            status_code=data['status'],
+            timestamp=current_time
+        )
+        db.session.add(new_log)
+
+    # --- ALWAYS Log Path (Map needs higher resolution) ---
+    # We log path independently because we want smooth movement history
+    # even if battery/temp hasn't changed.
+    new_path = PathLog(
+        robot_id=robot.id,
+        pos_x=data['pos_x'],
+        pos_y=data['pos_y'],
+        timestamp=current_time
+    )
+    db.session.add(new_path)
+    
+    db.session.commit()
+    return jsonify({"msg": "Synced"}), 200
+
+def cleanup_old_data():
+    """Deletes logs older than 7 days"""
+    expiration_date = datetime.utcnow() - timedelta(days=7)
+    
+    # Delete old telemetry
+    TelemetryLog.query.filter(TelemetryLog.timestamp < expiration_date).delete()
+    
+    # Delete old path history
+    PathLog.query.filter(PathLog.timestamp < expiration_date).delete()
+    
+    db.session.commit()
+    print("System Maintenance: Old logs purged.")
 
 # --- Routes ---
 
