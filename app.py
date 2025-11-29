@@ -134,7 +134,7 @@ def get_robot_telemetry():
 
 def cleanup_old_data():
     """Deletes logs older than 7 days"""
-    expiration_date = datetime.now(timezone.utc) - timedelta(days=7)
+    expiration_date = datetime.now(timezone.utc) - timedelta(days=30)
     
     # Delete old telemetry
     TelemetryLog.query.filter(TelemetryLog.timestamp < expiration_date).delete()
@@ -407,6 +407,79 @@ def api_path_history():
     } for p in paths]
     
     return jsonify(path_data)
+
+@app.route('/api/robot/date_range')
+@login_required
+def api_robot_date_range():
+    """Returns the earliest and latest dates with data for a robot"""
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify({"error": "Access denied"}), 403
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify({"error": "No accessible robots"}), 403
+        robot = Robot.query.get(accessible_ids[0])
+    
+    if not robot:
+        return jsonify({"error": "Robot not found"}), 404
+    
+    # Get earliest and latest telemetry timestamps
+    earliest_telemetry = TelemetryLog.query.filter_by(robot_id=robot.id)\
+        .order_by(TelemetryLog.timestamp.asc()).first()
+    latest_telemetry = TelemetryLog.query.filter_by(robot_id=robot.id)\
+        .order_by(TelemetryLog.timestamp.desc()).first()
+    
+    # Get earliest and latest path timestamps
+    earliest_path = PathLog.query.filter_by(robot_id=robot.id)\
+        .order_by(PathLog.timestamp.asc()).first()
+    latest_path = PathLog.query.filter_by(robot_id=robot.id)\
+        .order_by(PathLog.timestamp.desc()).first()
+    
+    # Determine absolute earliest and latest
+    earliest = None
+    latest = None
+    
+    if earliest_telemetry and earliest_path:
+        earliest = min(earliest_telemetry.timestamp, earliest_path.timestamp)
+    elif earliest_telemetry:
+        earliest = earliest_telemetry.timestamp
+    elif earliest_path:
+        earliest = earliest_path.timestamp
+    
+    if latest_telemetry and latest_path:
+        latest = max(latest_telemetry.timestamp, latest_path.timestamp)
+    elif latest_telemetry:
+        latest = latest_telemetry.timestamp
+    elif latest_path:
+        latest = latest_path.timestamp
+    
+    # Make datetimes timezone-aware if they aren't already
+    if earliest and earliest.tzinfo is None:
+        earliest = earliest.replace(tzinfo=timezone.utc)
+    if latest and latest.tzinfo is None:
+        latest = latest.replace(tzinfo=timezone.utc)
+    
+    # Limit to 30 days max history
+    if earliest:
+        now = datetime.now(timezone.utc)
+        max_history_date = now - timedelta(days=30)
+        if earliest < max_history_date:
+            earliest = max_history_date
+    
+    result = {
+        "earliest_date": earliest.date().isoformat() if earliest else None,
+        "latest_date": latest.date().isoformat() if latest else None,
+        "earliest_timestamp": earliest.isoformat() if earliest else None,
+        "latest_timestamp": latest.isoformat() if latest else None,
+        "robot_id": robot.id,
+        "serial_number": robot.serial_number
+    }
+    
+    return jsonify(result)
 
 @app.route('/api/telemetry_at_time')
 @login_required

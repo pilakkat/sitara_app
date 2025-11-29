@@ -12,6 +12,10 @@ let pollingIntervals = [];
 // Current robot selection
 let currentRobotId = null;
 let availableRobots = [];
+let robotDateRange = {
+    earliest: null,
+    latest: null
+};
 
 // Chart.js instances
 let batteryChart = null;
@@ -63,15 +67,59 @@ window.switchRobot = function() {
         // Clear path history to force full reload for new robot
         pathHistory = [];
         
-        // Refresh all data for new robot
-        if (isLiveMode) {
-            stopPolling();
-            startPolling();
-        } else {
-            loadHistoricalData();
-        }
+        // Switch to live mode by default
+        isLiveMode = true;
+        timelineAutoUpdate = true;
+        
+        // Clear date selector and update UI
+        $('#dateSelector').val('');
+        $('#dataMode').text('MODE: LIVE');
+        
+        // Fetch date range for this robot
+        fetchRobotDateRange();
+        
+        // Stop any existing polling and start fresh
+        stopPolling();
+        startPolling();
     }
 };
+
+// Fetch and update date range for current robot
+function fetchRobotDateRange() {
+    const robotId = currentRobotId || '';
+    const params = robotId ? `?robot_id=${robotId}` : '';
+    
+    $.getJSON('/api/robot/date_range' + params, function(data) {
+        console.log("Robot date range:", data);
+        
+        robotDateRange.earliest = data.earliest_date;
+        robotDateRange.latest = data.latest_date;
+        
+        // Update date picker constraints
+        const today = new Date().toISOString().split('T')[0];
+        const maxDate = data.latest_date || today;
+        const minDate = data.earliest_date || today;
+        
+        $('#dateSelector').attr('max', maxDate);
+        $('#dateSelector').attr('min', minDate);
+        
+        // Update button states
+        updateDateNavigationButtons();
+        
+        console.log(`Date range set: ${minDate} to ${maxDate}`);
+    }).fail(function(error) {
+        console.error("Failed to fetch date range:", error);
+        // Fallback to 30 days
+        const today = new Date();
+        const minDate = new Date();
+        minDate.setDate(minDate.getDate() - 30);
+        
+        $('#dateSelector').attr('max', today.toISOString().split('T')[0]);
+        $('#dateSelector').attr('min', minDate.toISOString().split('T')[0]);
+        
+        updateDateNavigationButtons();
+    });
+}
 
 // Ensure functions are available globally for button onclick events
 window.sendCommand = function(cmd) {
@@ -220,15 +268,18 @@ $(document).ready(function() {
         // Initialize health charts
         initHealthCharts();
         
-        // Set date picker to today
+        // Set date picker to today initially
         const today = new Date().toISOString().split('T')[0];
         $('#dateSelector').val(today);
-        $('#dateSelector').attr('max', today);  // Prevent future dates
+        $('#dateSelector').attr('max', today);
         
-        // Calculate min date (7 days ago based on seed data)
-        const minDate = new Date();
-        minDate.setDate(minDate.getDate() - 7);
-        $('#dateSelector').attr('min', minDate.toISOString().split('T')[0]);
+        // Set default min date (30 days ago - will be updated when robot is selected)
+        const defaultMinDate = new Date();
+        defaultMinDate.setDate(defaultMinDate.getDate() - 30);
+        $('#dateSelector').attr('min', defaultMinDate.toISOString().split('T')[0]);
+        
+        // Fetch actual date range for selected robot
+        fetchRobotDateRange();
         
         // Initialize button states
         updateDateNavigationButtons();
