@@ -1,0 +1,21 @@
+:root {
+    /* Color Palette */
+    --bg-dark: #000000;
+    --neon-blue: #00f3ff; /* Brighter Cyan */
+    --neon-purple: #bc13fe;
+    --dim-blue: #45a29e;
+    
+    /* Text Colors - Updated for Readability */
+    --text-main: #ffffff;
+    --text-secondary: #e0e0e0; /* Much lighter than grey */
+    --text-muted: #b0b0b0;     /* Readable on dark bg */
+    
+    /* Fonts */
+    --font-head: 'Orbitron', sans-serif;
+    --font-body: 'Roboto', sans-serif;
+    
+    /* Glass Effect Variables */
+    --glass-bg: rgba(20, 20, 30, 0.75); /* Darker, more opaque for readability */
+    --glass-border: rgba(0, 243, 255, 0.2);
+    --glass-blur: 15px;
+}

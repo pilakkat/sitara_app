@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="login-container">
+    <div class="card login-card p-4">
+        <div class="card-body text-center">
+            <h2 class="text-neon mb-4">SECURE ACCESS</h2>
+            <p class="text-muted small mb-4">RESTRICTED AREA: AUTHORIZED PERSONNEL ONLY</p>
+            
+            <form action="/login" method="POST">
+                <div class="mb-3 text-start">
+                    <label class="form-label text-white-50 small">OPERATOR ID</label>
+                    <input type="text" name="username" class="form-control form-control-cyber" placeholder="admin" required>
+                </div>
+                
+                <div class="mb-4 text-start">
+                    <label class="form-label text-white-50 small">ACCESS KEY</label>
+                    <input type="password" name="password" class="form-control form-control-cyber" placeholder="••••••" required>
+                </div>
+                
+                <button type="submit" class="btn btn-cyber w-100 py-2">
+                    INITIATE SESSION
+                </button>
+            </form>
+            
+            <div class="mt-3">
+                <small class="text-muted" style="font-size: 0.7em;">
+                    SITARA DYNAMICS SECURITY PROTOCOL v4.2<br>
+                    UNAUTHORIZED ACCESS WILL BE LOGGED.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

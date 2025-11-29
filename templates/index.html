@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="video-bg-container" style="margin-top: -56px;">
+    
+    <video autoplay muted loop playsinline class="bg-video">
+        <source src="{{ url_for('static', filename='video/a_hand_with_glowing_eyes.mp4') }}" type="video/mp4">
+    </video>
+    
+    <div class="video-overlay"></div>
+
+    <div class="content-wrapper container text-center">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="glass-panel reveal">
+                    <div class="badge border border-info text-info mb-3 px-3 py-2 rounded-pill">
+                        <span class="spinner-grow spinner-grow-sm me-2"></span> LIVE S4 LINK ESTABLISHED
+                    </div>
+                    <h1 class="display-2 fw-bold mb-3 text-white">SITARA DYNAMICS</h1>
+                    <p class="lead mb-4 text-white">
+                        SMART INTELLIGENT TACTILE AUTONOMOUS ROBOTIC AGENTS
+                    </p>
+                    <p class="mb-5 text-secondary">
+                        Merging high-torque mechanics with 200 TOPS edge intelligence.
+                        The workforce of tomorrow, controlled from the cloud today.
+                    </p>
+                    
+                    <div class="d-flex justify-content-center gap-3">
+                        {% if current_user.is_authenticated %}
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-cyber">OPEN CONSOLE</a>
+                        {% else %}
+                            <a href="{{ url_for('login') }}" class="btn btn-cyber">SECURE LOGIN</a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid py-5" style="background: #050505;">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6 reveal">
+                <h2 class="text-neon mb-3">THE S4 CLOUD ADVANTAGE</h2>
+                <div class="glass-panel p-4">
+                    <h5 class="text-white"><i class="bi bi-wifi me-2"></i> Low Latency Tele-Op</h5>
+                    <p class="small">
+                        Direct 5G command link to the Mobility Controller (H3). 
+                        Our optimized UDP stack ensures sub-50ms reaction times for remote manipulation.
+                    </p>
+                    <hr class="border-secondary">
+                    <h5 class="text-white"><i class="bi bi-eye me-2"></i> Visual SLAM Stream</h5>
+                    <p class="small">
+                        Real-time map generation and localization data streamed directly from the robot's H1 Unit to your browser.
+                    </p>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mt-4 mt-md-0 reveal">
+                <img src="{{ url_for('static', filename='img/sitara_robo.webp') }}" 
+                    class="img-fluid rounded border border-secondary" 
+                    style="opacity: 0.8;" 
+                    alt="Sitara Robot Prototype">
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="video-bg-container" style="min-height: 60vh;">
+    <video autoplay muted loop playsinline class="bg-video">
+        <source src="{{ url_for('static', filename='video/futuristic_tech.mp4') }}" type="video/mp4">
+    </video>
+    <div class="video-overlay"></div>
+
+    <div class="content-wrapper container text-center">
+        <h2 class="text-white mb-5 reveal">TECHNICAL SPECIFICATIONS</h2>
+        <div class="row g-4">
+            <div class="col-md-4 reveal">
+                <div class="glass-panel h-100">
+                    <h1 class="text-neon">32</h1>
+                    <p class="text-white fw-bold">DEGREES OF FREEDOM</p>
+                    <p class="small">Full range human-like articulation.</p>
+                </div>
+            </div>
+            <div class="col-md-4 reveal">
+                <div class="glass-panel h-100">
+                    <h1 class="text-neon">24V</h1>
+                    <p class="text-white fw-bold">POWER ARCHITECTURE</p>
+                    <p class="small">500W Output with Active Thermal Management.</p>
+                </div>
+            </div>
+            <div class="col-md-4 reveal">
+                <div class="glass-panel h-100">
+                    <h1 class="text-neon">200+</h1>
+                    <p class="text-white fw-bold">TOPS COMPUTE</p>
+                    <p class="small">Onboard AI for obstacle avoidance.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const reveals = document.querySelectorAll('.reveal');
+        const revealOnScroll = () => {
+            const windowHeight = window.innerHeight;
+            const elementVisible = 50;
+            reveals.forEach((reveal) => {
+                const elementTop = reveal.getBoundingClientRect().top;
+                if (elementTop < windowHeight - elementVisible) {
+                    reveal.classList.add('active');
+                }
+            });
+        };
+        window.addEventListener('scroll', revealOnScroll);
+        revealOnScroll();
+    });
+</script>
+
+{% endblock %}
