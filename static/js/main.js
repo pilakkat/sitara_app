@@ -27,6 +27,60 @@ let currentTimelineIndex = 0;
 let isTimelineDragging = false;
 let timelineAutoUpdate = true;
 
+// Helper function to get status icon based on robot status
+function getStatusIcon(status) {
+    if (!status) return '⚫';
+    
+    const statusUpper = status.toUpperCase();
+    
+    if (statusUpper === 'OFFLINE' || statusUpper === 'UNKNOWN') {
+        return '⚫'; // Black circle for offline
+    } else if (statusUpper === 'FAULT' || statusUpper.includes('ERROR') || statusUpper.includes('WARN')) {
+        return '🔴'; // Red circle for fault/error
+    } else if (statusUpper === 'CHARGING') {
+        return '🟡'; // Yellow circle for charging
+    } else if (statusUpper === 'BOOTING') {
+        return '🟠'; // Orange circle for booting
+    } else if (statusUpper === 'STANDBY' || statusUpper === 'IDLE') {
+        return '🟢'; // Green circle for standby/idle
+    } else if (statusUpper === 'MOVING' || statusUpper === 'SCANNING') {
+        return '🔵'; // Blue circle for active operations
+    } else {
+        return '🟢'; // Default green for operational states
+    }
+}
+
+// Update robot dropdown status icons
+function updateRobotDropdownStatus(robotId, status) {
+    const selector = $('#robotSelector');
+    const option = selector.find(`option[value="${robotId}"]`);
+    
+    if (option.length > 0) {
+        const serialNumber = option.text().substring(2).trim(); // Remove old icon
+        const statusIcon = getStatusIcon(status);
+        option.text(`${statusIcon} ${serialNumber}`);
+        option.attr('data-status', status);
+    }
+}
+
+// Update all robot statuses in dropdown
+function updateAllRobotStatuses() {
+    // Only update if we're in live mode
+    if (!isLiveMode) return;
+    
+    // Fetch status for all available robots
+    availableRobots.forEach(robot => {
+        $.getJSON('/api/telemetry?robot_id=' + robot.id, function(data) {
+            if (data.status) {
+                updateRobotDropdownStatus(robot.id, data.status);
+            }
+        }).fail(function() {
+            // If telemetry fetch fails, mark as offline
+            updateRobotDropdownStatus(robot.id, 'OFFLINE');
+        });
+    });
+}
+
 // Load available robots
 function loadRobots() {
     $.get('/api/robots')
@@ -43,8 +97,8 @@ function loadRobots() {
             }
             
             robots.forEach(robot => {
-                const statusBadge = robot.status === 'OFFLINE' ? '⚫' : '🟢';
-                selector.append(`<option value="${robot.id}">${statusBadge} ${robot.serial_number} (${robot.status})</option>`);
+                const statusBadge = getStatusIcon(robot.status);
+                selector.append(`<option value="${robot.id}" data-status="${robot.status}">${statusBadge} ${robot.serial_number}</option>`);
             });
             
             // Select first robot by default
@@ -325,12 +379,14 @@ function startPolling() {
     fetchPathHistory();
     fetchTelemetryLogs();
     fetchHealthHistory();
+    updateAllRobotStatuses();
     
     // Then start the polling loops
     pollingIntervals.push(setInterval(fetchTelemetry, 2000));        // Update every 2 seconds
     pollingIntervals.push(setInterval(fetchPathHistory, 3000));      // Update path every 3 seconds
     pollingIntervals.push(setInterval(fetchTelemetryLogs, 5000));    // Update logs every 5 seconds
     pollingIntervals.push(setInterval(fetchHealthHistory, 10000));   // Update charts every 10 seconds
+    pollingIntervals.push(setInterval(updateAllRobotStatuses, 5000)); // Update all robot statuses every 5 seconds
 }
 
 /**
@@ -365,6 +421,11 @@ function fetchTelemetry() {
     const params = currentRobotId ? `?robot_id=${currentRobotId}` : '';
     $.getJSON('/api/telemetry' + params, function(data) {
         updateTelemetryDisplay(data);
+        
+        // Update robot dropdown status icon if we have robot_id and status
+        if (data.robot_id && data.status) {
+            updateRobotDropdownStatus(data.robot_id, data.status);
+        }
     }).fail(function(xhr, status, error) {
         console.warn("Telemetry endpoint unreachable:", error);
         $('#statusVal').text("CONNECTION LOST")
