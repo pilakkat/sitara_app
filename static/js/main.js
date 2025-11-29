@@ -631,7 +631,8 @@ function drawPath() {
  * Fetches telemetry logs and displays them in the log terminal
  */
 function fetchTelemetryLogs() {
-    $.getJSON('/api/telemetry_history', function(data) {
+    const params = currentRobotId ? `?robot_id=${currentRobotId}` : '';
+    $.getJSON('/api/telemetry_history' + params, function(data) {
         displayLogs(data);
     }).fail(function() {
         console.warn("Telemetry history endpoint unreachable.");
@@ -642,7 +643,8 @@ function fetchTelemetryLogs() {
  * Fetch historical logs for specific date
  */
 function fetchHistoricalLogs(date) {
-    $.getJSON('/api/telemetry_history?date=' + date, function(data) {
+    const params = `date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    $.getJSON('/api/telemetry_history?' + params, function(data) {
         displayLogs(data);
     }).fail(function() {
         console.warn("No logs for this date.");
