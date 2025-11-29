@@ -30,6 +30,32 @@
             </div>
             <div class="map-container" id="mapZone">
                 <canvas id="pathCanvas" width="600" height="400" style="position: absolute; top: 0; left: 0;"></canvas>
+                
+                <!-- Obstacles (furniture, walls, etc.) -->
+                <!-- North Wall -->
+                <div class="obstacle" style="top: 0%; left: 0%; width: 100%; height: 5%;" title="North Wall"></div>
+                <!-- South Wall -->
+                <div class="obstacle" style="top: 95%; left: 0%; width: 100%; height: 5%;" title="South Wall"></div>
+                <!-- West Wall -->
+                <div class="obstacle" style="top: 0%; left: 0%; width: 5%; height: 100%;" title="West Wall"></div>
+                <!-- East Wall -->
+                <div class="obstacle" style="top: 0%; left: 95%; width: 5%; height: 100%;" title="East Wall"></div>
+                
+                <!-- Conference Table (center-left) -->
+                <div class="obstacle" style="top: 35%; left: 15%; width: 25%; height: 30%;" title="Conference Table"></div>
+                
+                <!-- Desk (top-right) -->
+                <div class="obstacle" style="top: 10%; left: 70%; width: 20%; height: 15%;" title="Desk"></div>
+                
+                <!-- Chair 1 (near desk) -->
+                <div class="obstacle obstacle-small" style="top: 27%; left: 75%; width: 8%; height: 8%;" title="Chair"></div>
+                
+                <!-- Storage Cabinet (bottom-right) -->
+                <div class="obstacle" style="top: 75%; left: 70%; width: 20%; height: 18%;" title="Storage Cabinet"></div>
+                
+                <!-- Pillar (center) -->
+                <div class="obstacle obstacle-small" style="top: 48%; left: 55%; width: 8%; height: 8%;" title="Pillar"></div>
+                
                 <div id="robotMarker" class="robot-marker status-standby" style="top: 50%; left: 50%;">
                     <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                         <!-- Head -->

@@ -16,6 +16,40 @@ from dotenv import load_dotenv
 from flask import Flask, render_template_string, request, jsonify
 import sys
 
+# Define obstacle boundaries (x, y, width, height in %)
+OBSTACLES = [
+    # Walls (5% thick)
+    {'x': 0, 'y': 0, 'width': 100, 'height': 5, 'name': 'North Wall'},
+    {'x': 0, 'y': 95, 'width': 100, 'height': 5, 'name': 'South Wall'},
+    {'x': 0, 'y': 0, 'width': 5, 'height': 100, 'name': 'West Wall'},
+    {'x': 95, 'y': 0, 'width': 5, 'height': 100, 'name': 'East Wall'},
+    
+    # Furniture
+    {'x': 15, 'y': 35, 'width': 25, 'height': 30, 'name': 'Conference Table'},
+    {'x': 70, 'y': 10, 'width': 20, 'height': 15, 'name': 'Desk'},
+    {'x': 75, 'y': 27, 'width': 8, 'height': 8, 'name': 'Chair'},
+    {'x': 70, 'y': 75, 'width': 20, 'height': 18, 'name': 'Storage Cabinet'},
+    {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
+]
+
+def check_collision(x, y, buffer=2):
+    """Check if position collides with any obstacle"""
+    for obstacle in OBSTACLES:
+        if (x >= (obstacle['x'] - buffer) and 
+            x <= (obstacle['x'] + obstacle['width'] + buffer) and
+            y >= (obstacle['y'] - buffer) and 
+            y <= (obstacle['y'] + obstacle['height'] + buffer)):
+            return True
+    return False
+
+def is_valid_position(x, y):
+    """Check if position is valid (within bounds and no collision)"""
+    # Keep robot within safe area (away from edges)
+    if x < 5 or x > 95 or y < 5 or y > 95:
+        return False
+    # Check obstacle collision
+    return not check_collision(x, y)
+
 # Load environment variables
 # Priority: .env (personal credentials) -> config.env (defaults/template)
 if os.path.exists('.env'):
@@ -40,7 +74,7 @@ class RobotClient:
         self.stop_event = Event()
         
         # Robot state
-        self.position = {'x': 50.0, 'y': 50.0, 'orientation': 0.0}
+        self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
         self.battery_voltage = 24.5
         self.temperature = 45.0
         self.motor_load = 0
@@ -276,31 +310,42 @@ class RobotClient:
         """Update robot's internal state based on current command"""
         # Update position based on status and current command
         if self.status == "MOVING":
+            # Calculate new position based on command
+            new_x = self.position['x']
+            new_y = self.position['y']
+            
             if self.current_command == 'move_up':
                 # Move up (decrease Y)
-                self.position['y'] -= self.speed
+                new_y -= self.speed
             elif self.current_command == 'move_down':
                 # Move down (increase Y)
-                self.position['y'] += self.speed
+                new_y += self.speed
             elif self.current_command == 'move_left':
                 # Move left (decrease X)
-                self.position['x'] -= self.speed
+                new_x -= self.speed
             elif self.current_command == 'move_right':
                 # Move right (increase X)
-                self.position['x'] += self.speed
+                new_x += self.speed
             elif self.current_command == 'move_forward':
                 # Move forward in current orientation
                 rad = math.radians(self.position['orientation'])
-                self.position['x'] += self.speed * math.cos(rad)
-                self.position['y'] += self.speed * math.sin(rad)
+                new_x += self.speed * math.cos(rad)
+                new_y += self.speed * math.sin(rad)
                 
                 # Slight random orientation change for forward movement
                 self.position['orientation'] += random.uniform(-5, 5)
                 self.position['orientation'] = self.position['orientation'] % 360
             
-            # Keep within bounds (0-100)
-            self.position['x'] = max(0, min(100, self.position['x']))
-            self.position['y'] = max(0, min(100, self.position['y']))
+            # Validate new position against obstacles
+            if is_valid_position(new_x, new_y):
+                self.position['x'] = new_x
+                self.position['y'] = new_y
+            else:
+                # Stop if collision detected
+                print(f"[ROBOT-{self.robot_id}] Collision detected at ({new_x:.1f}, {new_y:.1f}), stopping")
+                self.status = "STANDBY"
+                self.motor_load = 0
+                self.current_command = None
             
             # Battery drain
             self.battery_voltage -= 0.001

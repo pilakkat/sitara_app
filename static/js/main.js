@@ -34,7 +34,77 @@ let timelineAutoUpdate = true;
  */
 function getTimezoneOffset() {
     return new Date().getTimezoneOffset();
-}// Helper function to get status icon based on robot status
+}
+
+/**
+ * Define obstacle boundaries (x, y, width, height in %)
+ * These represent physical objects the robot must avoid
+ */
+const obstacles = [
+    // Walls (5% thick)
+    { x: 0, y: 0, width: 100, height: 5, name: 'North Wall' },
+    { x: 0, y: 95, width: 100, height: 5, name: 'South Wall' },
+    { x: 0, y: 0, width: 5, height: 100, name: 'West Wall' },
+    { x: 95, y: 0, width: 5, height: 100, name: 'East Wall' },
+    
+    // Furniture
+    { x: 15, y: 35, width: 25, height: 30, name: 'Conference Table' },
+    { x: 70, y: 10, width: 20, height: 15, name: 'Desk' },
+    { x: 75, y: 27, width: 8, height: 8, name: 'Chair' },
+    { x: 70, y: 75, width: 20, height: 18, name: 'Storage Cabinet' },
+    { x: 55, y: 48, width: 8, height: 8, name: 'Pillar' }
+];
+
+/**
+ * Check if a position collides with any obstacle
+ * @param {number} x - X position (0-100)
+ * @param {number} y - Y position (0-100)
+ * @param {number} buffer - Safety buffer around obstacles (default 2%)
+ * @returns {boolean} - True if collision detected
+ */
+function checkCollision(x, y, buffer = 2) {
+    for (const obstacle of obstacles) {
+        if (x >= (obstacle.x - buffer) && 
+            x <= (obstacle.x + obstacle.width + buffer) &&
+            y >= (obstacle.y - buffer) && 
+            y <= (obstacle.y + obstacle.height + buffer)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Find nearest valid position if collision detected
+ * @param {number} x - Target X position
+ * @param {number} y - Target Y position
+ * @returns {object} - Nearest valid {x, y} position
+ */
+function findNearestValidPosition(x, y) {
+    if (!checkCollision(x, y)) {
+        return { x, y };
+    }
+    
+    // Try positions in expanding radius
+    for (let radius = 3; radius <= 15; radius += 2) {
+        for (let angle = 0; angle < 360; angle += 45) {
+            const rad = angle * Math.PI / 180;
+            const testX = x + radius * Math.cos(rad);
+            const testY = y + radius * Math.sin(rad);
+            
+            if (testX >= 5 && testX <= 95 && testY >= 5 && testY <= 95) {
+                if (!checkCollision(testX, testY)) {
+                    return { x: testX, y: testY };
+                }
+            }
+        }
+    }
+    
+    // Fallback to center
+    return { x: 50, y: 50 };
+}
+
+// Helper function to get status icon based on robot status
 function getStatusIcon(status) {
     if (!status) return '⚫';
     
@@ -536,11 +606,23 @@ function updateTelemetryDisplay(data) {
         $('#loadBar').removeClass('bg-danger').addClass('bg-info');
     }
 
-    // 5. Move Robot on Map
+    // 5. Move Robot on Map (with collision detection)
     const robotMarker = $('#robotMarker');
+    
+    // Check if new position collides with obstacles
+    let finalX = data.pos_x;
+    let finalY = data.pos_y;
+    
+    if (checkCollision(finalX, finalY)) {
+        console.warn(`Collision detected at (${finalX}, ${finalY}), finding nearest valid position`);
+        const validPos = findNearestValidPosition(finalX, finalY);
+        finalX = validPos.x;
+        finalY = validPos.y;
+    }
+    
     robotMarker.css({
-        'top': data.pos_y + '%',
-        'left': data.pos_x + '%'
+        'top': finalY + '%',
+        'left': finalX + '%'
     });
     
     // Update robot marker color based on status
@@ -1113,10 +1195,21 @@ function updateRobotPositionFromTimeline(index) {
     index = Math.max(0, Math.min(timelineData.length - 1, index));
     const dataPoint = timelineData[index];
     
+    // Check for collision before updating position
+    let finalX = dataPoint.x;
+    let finalY = dataPoint.y;
+    
+    if (checkCollision(finalX, finalY)) {
+        console.warn(`Timeline position collision at (${finalX}, ${finalY}), adjusting`);
+        const validPos = findNearestValidPosition(finalX, finalY);
+        finalX = validPos.x;
+        finalY = validPos.y;
+    }
+    
     // Update robot marker position
     $('#robotMarker').css({
-        'top': dataPoint.y + '%',
-        'left': dataPoint.x + '%'
+        'top': finalY + '%',
+        'left': finalX + '%'
     });
     
     // Update robot marker rotation if orientation is available

@@ -4,6 +4,58 @@ import math
 
 from datetime import datetime, timedelta, timezone
 
+# --- OBSTACLE DEFINITIONS ---
+OBSTACLES = [
+    # Walls (5% thick)
+    {'x': 0, 'y': 0, 'width': 100, 'height': 5, 'name': 'North Wall'},
+    {'x': 0, 'y': 95, 'width': 100, 'height': 5, 'name': 'South Wall'},
+    {'x': 0, 'y': 0, 'width': 5, 'height': 100, 'name': 'West Wall'},
+    {'x': 95, 'y': 0, 'width': 5, 'height': 100, 'name': 'East Wall'},
+    
+    # Furniture
+    {'x': 15, 'y': 35, 'width': 25, 'height': 30, 'name': 'Conference Table'},
+    {'x': 70, 'y': 10, 'width': 20, 'height': 15, 'name': 'Desk'},
+    {'x': 75, 'y': 27, 'width': 8, 'height': 8, 'name': 'Chair'},
+    {'x': 70, 'y': 75, 'width': 20, 'height': 18, 'name': 'Storage Cabinet'},
+    {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
+]
+
+def check_collision(x, y, buffer=2):
+    """Check if position collides with any obstacle"""
+    for obstacle in OBSTACLES:
+        if (x >= (obstacle['x'] - buffer) and 
+            x <= (obstacle['x'] + obstacle['width'] + buffer) and
+            y >= (obstacle['y'] - buffer) and 
+            y <= (obstacle['y'] + obstacle['height'] + buffer)):
+            return True
+    return False
+
+def is_valid_position(x, y):
+    """Check if position is valid (within bounds and no collision)"""
+    # Keep robot within safe area (away from edges)
+    if x < 5 or x > 95 or y < 5 or y > 95:
+        return False
+    # Check obstacle collision
+    return not check_collision(x, y)
+
+def find_valid_position_near(x, y, max_attempts=20):
+    """Find a valid position near the target coordinates"""
+    if is_valid_position(x, y):
+        return x, y
+    
+    # Try positions in expanding radius
+    for radius in range(3, 16, 2):
+        for angle in range(0, 360, 45):
+            rad = math.radians(angle)
+            test_x = x + radius * math.cos(rad)
+            test_y = y + radius * math.sin(rad)
+            
+            if is_valid_position(test_x, test_y):
+                return test_x, test_y
+    
+    # Fallback to center
+    return 50.0, 50.0
+
 # --- CONFIGURATION ---
 ROBOTS = [
     {
@@ -85,8 +137,9 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         last_telemetry_time = start_time
         
         # Track last position for smooth movement
-        last_pos_x = 50.0
-        last_pos_y = 50.0
+        # Start at a valid position (avoid obstacles)
+        last_pos_x = 30.0  # Start in open area (left side)
+        last_pos_y = 20.0
         last_orientation = 0.0
         
         # Movement state
@@ -202,28 +255,32 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                     target_x = 50 + (30 * math.sin(t))
                     target_y = 50 + (20 * math.sin(2 * t))
                 elif movement_phase == 1:
-                    # Circular patrol
-                    target_x = 50 + (35 * math.cos(t))
-                    target_y = 50 + (35 * math.sin(t))
+                    # Circular patrol (adjusted to avoid center obstacles)
+                    target_x = 30 + (20 * math.cos(t))
+                    target_y = 20 + (20 * math.sin(t))
                 elif movement_phase == 2:
-                    # Square patrol
+                    # Modified square patrol to avoid obstacles
                     phase = (t % (2 * math.pi)) / (2 * math.pi)
                     if phase < 0.25:
-                        target_x = 20 + (phase * 4 * 60)
-                        target_y = 20
+                        target_x = 10 + (phase * 4 * 50)
+                        target_y = 15
                     elif phase < 0.5:
-                        target_x = 80
-                        target_y = 20 + ((phase - 0.25) * 4 * 60)
+                        target_x = 60
+                        target_y = 15 + ((phase - 0.25) * 4 * 20)
                     elif phase < 0.75:
-                        target_x = 80 - ((phase - 0.5) * 4 * 60)
-                        target_y = 80
+                        target_x = 60 - ((phase - 0.5) * 4 * 50)
+                        target_y = 35
                     else:
-                        target_x = 20
-                        target_y = 80 - ((phase - 0.75) * 4 * 60)
+                        target_x = 10
+                        target_y = 35 - ((phase - 0.75) * 4 * 20)
                 else:
-                    # Random walk with smooth transitions
-                    target_x = 50 + (25 * math.sin(t)) + (10 * math.cos(t * 3))
-                    target_y = 50 + (25 * math.cos(t)) + (10 * math.sin(t * 2.5))
+                    # Random walk in open spaces
+                    target_x = 30 + (15 * math.sin(t)) + (10 * math.cos(t * 3))
+                    target_y = 20 + (15 * math.cos(t)) + (10 * math.sin(t * 2.5))
+                
+                # Validate target position and find alternative if needed
+                if not is_valid_position(target_x, target_y):
+                    target_x, target_y = find_valid_position_near(target_x, target_y)
                 
                 # Smooth interpolation to avoid teleportation (max speed limit)
                 max_speed = 2.0  # Maximum units per minute
@@ -240,6 +297,12 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                     pos_x = target_x
                     pos_y = target_y
                 
+                # Validate final position before committing
+                if not is_valid_position(pos_x, pos_y):
+                    # If collision, stay at last position
+                    pos_x = last_pos_x
+                    pos_y = last_pos_y
+                
                 # Calculate orientation based on movement direction
                 if abs(dx) > 0.1 or abs(dy) > 0.1:
                     orientation = (math.degrees(math.atan2(dy, dx)) + 90) % 360
@@ -252,7 +315,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                 pos_y = last_pos_y
                 orientation = last_orientation
             
-            # Keep positions in bounds (0-100)
+            # Keep positions in bounds (0-100) - final safety check
             pos_x = max(5, min(95, pos_x))
             pos_y = max(5, min(95, pos_y))
             
