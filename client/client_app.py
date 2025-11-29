@@ -46,6 +46,7 @@ class RobotClient:
         self.motor_load = 0
         self.status = "STANDBY"
         self.cycle_count = 0
+        self.is_powered_on = True  # Track power state
         
         # Track previous state for change detection
         self.last_telemetry_state = None
@@ -119,6 +120,10 @@ class RobotClient:
     
     def send_telemetry(self):
         """Send current telemetry data to server (only if data has changed)"""
+        # Don't send telemetry if powered off
+        if not self.is_powered_on:
+            return True
+            
         try:
             # Generate timestamp on client side for accurate time tracking
             timestamp = datetime.now(timezone.utc).isoformat()
@@ -161,6 +166,43 @@ class RobotClient:
                 return False
         except Exception as e:
             print(f"[ROBOT-{self.robot_id}] ✗ Telemetry error: {e}")
+            return False
+    
+    def send_telemetry_immediate(self):
+        """Force send telemetry immediately regardless of change detection"""
+        try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            
+            current_state = {
+                'robot_id': self.robot_id,
+                'battery_voltage': round(self.battery_voltage, 2),
+                'temperature': round(self.temperature, 1),
+                'motor_load': self.motor_load,
+                'status': self.status,
+                'cycle_count': self.cycle_count,
+                'x': round(self.position['x'], 2),
+                'y': round(self.position['y'], 2),
+                'orientation': round(self.position['orientation'], 2)
+            }
+            
+            telemetry_data = current_state.copy()
+            telemetry_data['timestamp'] = timestamp
+            
+            response = self.session.post(
+                f"{self.server_url}/api/robot/telemetry",
+                json=telemetry_data,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                self.last_telemetry_state = current_state
+                print(f"[ROBOT-{self.robot_id}] → Immediate telemetry sent | Status: {self.status}")
+                return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ✗ Immediate telemetry failed: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ✗ Immediate telemetry error: {e}")
             return False
     
     def check_commands(self):
@@ -488,6 +530,11 @@ def index():
             .btn:active {
                 transform: translateY(0);
             }
+            .btn:disabled {
+                opacity: 0.3;
+                cursor: not-allowed;
+                pointer-events: none;
+            }
             .btn-special {
                 background: rgba(255, 100, 100, 0.1);
                 border-color: rgba(255, 100, 100, 0.8);
@@ -557,13 +604,13 @@ def index():
                     <h2>📍 Position Control</h2>
                     <div class="control-grid">
                         <div></div>
-                        <button class="btn" onclick="moveDirection('up')">▲<br>UP</button>
+                        <button class="btn" id="upBtn" onclick="moveDirection('up')">▲<br>UP</button>
                         <div></div>
-                        <button class="btn" onclick="moveDirection('left')">◀<br>LEFT</button>
+                        <button class="btn" id="leftBtn" onclick="moveDirection('left')">◀<br>LEFT</button>
                         <div></div>
-                        <button class="btn" onclick="moveDirection('right')">▶<br>RIGHT</button>
+                        <button class="btn" id="rightBtn" onclick="moveDirection('right')">▶<br>RIGHT</button>
                         <div></div>
-                        <button class="btn" onclick="moveDirection('down')">▼<br>DOWN</button>
+                        <button class="btn" id="downBtn" onclick="moveDirection('down')">▼<br>DOWN</button>
                         <div></div>
                     </div>
                 </div>
@@ -595,11 +642,11 @@ def index():
                 <h2>🔧 Special Operations</h2>
                 <div class="special-ops">
                     <button class="btn btn-charge" onclick="specialOp('charging')">🔋 CHARGING</button>
-                    <button class="btn btn-special" onclick="specialOp('turnoff')">⏻ TURN OFF</button>
+                    <button class="btn btn-special" id="powerBtn" onclick="togglePower()">⏻ POWER</button>
                     <button class="btn btn-special" onclick="specialOp('fault')">⚠️ FAULT</button>
-                    <button class="btn" onclick="specialOp('standby')">⏸️ STANDBY</button>
-                    <button class="btn" onclick="specialOp('moving')">▶️ MOVING</button>
-                    <button class="btn" onclick="specialOp('scanning')">🔍 SCANNING</button>
+                    <button class="btn" id="standbyBtn" onclick="specialOp('standby')">⏸️ STANDBY</button>
+                    <button class="btn" id="movingBtn" onclick="specialOp('moving')">▶️ MOVING</button>
+                    <button class="btn" id="scanningBtn" onclick="specialOp('scanning')">🔍 SCANNING</button>
                 </div>
             </div>
             
@@ -700,6 +747,31 @@ def index():
                 });
             }
             
+            function togglePower() {
+                fetch('/api/control/power', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage(data.is_powered_on ? 'BOOTING...' : 'POWERED OFF');
+                        updateStatus();
+                    }
+                });
+            }
+            
+            function setButtonsEnabled(enabled) {
+                // Position buttons
+                ['upBtn', 'downBtn', 'leftBtn', 'rightBtn'].forEach(id => {
+                    document.getElementById(id).disabled = !enabled;
+                });
+                // Operation buttons
+                ['standbyBtn', 'movingBtn', 'scanningBtn'].forEach(id => {
+                    document.getElementById(id).disabled = !enabled;
+                });
+            }
+            
             function updateStatus() {
                 fetch('/api/control/status')
                 .then(r => r.json())
@@ -719,6 +791,9 @@ def index():
                     // Update sliders
                     document.getElementById('voltageSlider').value = data.battery_voltage;
                     document.getElementById('tempSlider').value = data.temperature;
+                    
+                    // Enable/disable buttons based on power state
+                    setButtonsEnabled(data.is_powered_on);
                 });
             }
             
@@ -742,7 +817,8 @@ def get_status():
             'temperature': robot_client.temperature,
             'status': robot_client.status,
             'motor_load': robot_client.motor_load,
-            'cycle_count': robot_client.cycle_count
+            'cycle_count': robot_client.cycle_count,
+            'is_powered_on': robot_client.is_powered_on
         })
     return jsonify({'error': 'Robot not initialized'}), 500
 
@@ -806,9 +882,6 @@ def control_operation():
     if operation == 'charging':
         robot_client.status = 'CHARGING'
         robot_client.motor_load = 0
-    elif operation == 'turnoff':
-        robot_client.status = 'OFFLINE'
-        robot_client.motor_load = 0
     elif operation == 'fault':
         robot_client.status = 'FAULT'
         robot_client.motor_load = 0
@@ -823,6 +896,41 @@ def control_operation():
         robot_client.motor_load = 30
     
     return jsonify({'success': True})
+
+@control_app.route('/api/control/power', methods=['POST'])
+def control_power():
+    """Toggle power on/off"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if robot_client.is_powered_on:
+        # Turning OFF
+        robot_client.status = 'OFFLINE'
+        robot_client.motor_load = 0
+        robot_client.is_powered_on = False
+        # Send immediate telemetry before stopping
+        robot_client.send_telemetry_immediate()
+    else:
+        # Turning ON - start with BOOTING
+        robot_client.is_powered_on = True
+        robot_client.status = 'BOOTING'
+        robot_client.motor_load = 10
+        # Send immediate telemetry
+        robot_client.send_telemetry_immediate()
+        
+        # Schedule transition to STANDBY after a few seconds
+        import threading
+        def transition_to_standby():
+            import time
+            time.sleep(3)  # Boot for 3 seconds
+            if robot_client.is_powered_on and robot_client.status == 'BOOTING':
+                robot_client.status = 'STANDBY'
+                robot_client.motor_load = 0
+                robot_client.send_telemetry_immediate()
+        
+        threading.Thread(target=transition_to_standby, daemon=True).start()
+    
+    return jsonify({'success': True, 'is_powered_on': robot_client.is_powered_on})
 
 def run_control_interface(port):
     """Run the Flask control interface"""
