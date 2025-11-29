@@ -84,7 +84,7 @@ def get_robot_telemetry():
     last_log = TelemetryLog.query.filter_by(robot_id=robot.id).order_by(TelemetryLog.timestamp.desc()).first()
     
     should_log = False
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
 
     if not last_log:
         should_log = True
@@ -120,11 +120,12 @@ def get_robot_telemetry():
     # --- ALWAYS Log Path (Map needs higher resolution) ---
     # We log path independently because we want smooth movement history
     # even if battery/temp hasn't changed.
+    # Use a fresh timestamp to ensure uniqueness
     new_path = PathLog(
         robot_id=robot.id,
         pos_x=data['pos_x'],
         pos_y=data['pos_y'],
-        timestamp=current_time
+        timestamp=datetime.now(timezone.utc)
     )
     db.session.add(new_path)
     
@@ -133,7 +134,7 @@ def get_robot_telemetry():
 
 def cleanup_old_data():
     """Deletes logs older than 7 days"""
-    expiration_date = datetime.utcnow() - timedelta(days=7)
+    expiration_date = datetime.now(timezone.utc) - timedelta(days=7)
     
     # Delete old telemetry
     TelemetryLog.query.filter(TelemetryLog.timestamp < expiration_date).delete()
@@ -149,6 +150,28 @@ def cleanup_old_data():
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+def user_can_access_robot(robot_id):
+    """Check if current user has access to the specified robot"""
+    robot = Robot.query.get(robot_id)
+    if not robot:
+        return False
+    
+    # Admin (username='admin') can access all robots
+    if current_user.username == 'admin':
+        return True
+    
+    # Operators can only access their assigned robots
+    return robot.assigned_to == current_user.id
+
+def get_user_accessible_robots():
+    """Get list of robot IDs the current user can access"""
+    if current_user.username == 'admin':
+        # Admin sees all robots
+        return [r.id for r in Robot.query.all()]
+    else:
+        # Operators see only their assigned robots
+        return [r.id for r in Robot.query.filter_by(assigned_to=current_user.id).all()]
 
 @app.route('/')
 def index():
@@ -194,8 +217,28 @@ def ethics():
 @login_required
 def api_telemetry():
     """GET endpoint - Returns latest telemetry data for dashboard"""
-    # Get the default robot (you can modify this to support multiple robots)
-    robot = Robot.query.first()
+    # Get robot_id from query parameter, default to first accessible robot
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        # Check access permission
+        if not user_can_access_robot(robot_id):
+            return jsonify({"error": "Access denied to this robot"}), 403
+        robot = Robot.query.get(robot_id)
+    else:
+        # Get first accessible robot
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify({
+                "battery": 0,
+                "cpu_temp": 0,
+                "load": 0,
+                "status": "NO_ROBOT_ACCESS",
+                "pos_x": 50,
+                "pos_y": 50,
+                "cycles": 0
+            })
+        robot = Robot.query.get(accessible_ids[0])
     
     if not robot:
         return jsonify({
@@ -226,6 +269,8 @@ def api_telemetry():
         })
     
     return jsonify({
+        "robot_id": robot.id,
+        "serial_number": robot.serial_number,
         "battery": latest_telem.battery_voltage or 0,
         "cpu_temp": latest_telem.cpu_temp or 0,
         "load": latest_telem.motor_load or 0,
@@ -241,7 +286,18 @@ def api_telemetry():
 @login_required
 def api_telemetry_history():
     """Returns recent telemetry logs for the log terminal"""
-    robot = Robot.query.first()
+    # Get robot_id from query parameter or use first accessible robot
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify([])  # Return empty list if no access
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify([])
+        robot = Robot.query.get(accessible_ids[0])
     
     if not robot:
         return jsonify([])
@@ -286,13 +342,25 @@ def api_telemetry_history():
 @login_required
 def api_path_history():
     """Returns path history for trail visualization"""
-    robot = Robot.query.first()
+    # Get robot_id from query parameter or use first accessible robot
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify([])
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify([])
+        robot = Robot.query.get(accessible_ids[0])
     
     if not robot:
         return jsonify([])
     
     # Check if date parameter is provided for historical data
     date_param = request.args.get('date')
+    since_param = request.args.get('since')  # For incremental updates
     
     if date_param:
         # Parse the date and get data for that specific day
@@ -312,13 +380,25 @@ def api_path_history():
             paths = [all_paths[i] for i in range(0, len(all_paths), 5)] if len(all_paths) > 200 else all_paths
         except ValueError:
             return jsonify({"error": "Invalid date format"}), 400
+    elif since_param:
+        # Incremental update: only get new path points since the given timestamp
+        try:
+            since_time = datetime.fromisoformat(since_param.replace('Z', '+00:00'))
+            print(f"[DEBUG] Incremental path query: robot_id={robot.id}, since={since_time}")
+            paths = PathLog.query.filter_by(robot_id=robot.id)\
+                .filter(PathLog.timestamp > since_time)\
+                .order_by(PathLog.timestamp.asc())\
+                .all()
+            print(f"[DEBUG] Found {len(paths)} new path points")
+        except ValueError:
+            return jsonify({"error": "Invalid timestamp format"}), 400
     else:
-        # Get last 100 path points (live mode)
+        # Initial load: get all path points for today
+        start_of_day = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         paths = PathLog.query.filter_by(robot_id=robot.id)\
-            .order_by(PathLog.timestamp.desc())\
-            .limit(100)\
+            .filter(PathLog.timestamp >= start_of_day)\
+            .order_by(PathLog.timestamp.asc())\
             .all()
-        paths = list(reversed(paths))
     
     path_data = [{
         "x": p.pos_x,
@@ -332,7 +412,18 @@ def api_path_history():
 @login_required
 def api_telemetry_at_time():
     """Returns telemetry data for a specific date/time"""
-    robot = Robot.query.first()
+    # Get robot_id from query parameter or use first accessible robot
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify({"error": "Access denied"}), 403
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify({"error": "No accessible robots"}), 403
+        robot = Robot.query.get(accessible_ids[0])
     
     if not robot:
         return jsonify({"error": "No robot found"}), 404
@@ -391,7 +482,18 @@ def api_command():
 @login_required
 def api_health_history():
     """Returns battery and temperature history for the past 2 hours"""
-    robot = Robot.query.first()
+    # Get robot_id from query parameter or use first accessible robot
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify({"battery": [], "temperature": []})
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify({"battery": [], "temperature": []})
+        robot = Robot.query.get(accessible_ids[0])
     
     if not robot:
         return jsonify({"battery": [], "temperature": []})
@@ -443,12 +545,182 @@ def api_health_history():
         "temperature": temp_data
     })
 
+# ==========================================
+# ROBOT CLIENT API ENDPOINTS
+# ==========================================
+
+# Store pending commands in memory (in production, use Redis or database)
+pending_commands = {}
+
+@app.route('/api/robot/telemetry', methods=['POST'])
+@login_required
+def receive_telemetry():
+    """Receive telemetry data from robot client"""
+    try:
+        data = request.get_json()
+        
+        robot_id = data.get('robot_id', 1)
+        
+        # Parse client timestamp if provided, otherwise use server time
+        client_timestamp = data.get('timestamp')
+        if client_timestamp:
+            try:
+                timestamp = datetime.fromisoformat(client_timestamp.replace('Z', '+00:00'))
+            except (ValueError, AttributeError):
+                timestamp = datetime.now(timezone.utc)
+        else:
+            timestamp = datetime.now(timezone.utc)
+        
+        # Check if robot exists, if not create it
+        robot = Robot.query.get(robot_id)
+        if not robot:
+            robot = Robot(
+                id=robot_id,
+                serial_number=f"S4-{robot_id:04d}",
+                model_type="32DOF-HUMANOID",
+                assigned_to=current_user.id
+            )
+            db.session.add(robot)
+        
+        # Create telemetry log with client timestamp
+        telemetry = TelemetryLog(
+            robot_id=robot_id,
+            battery_voltage=data.get('battery_voltage', 24.0),
+            cpu_temp=int(data.get('temperature', 45.0)),
+            motor_load=data.get('motor_load', 0),
+            status_code=data.get('status', 'IDLE'),
+            cycle_counter=data.get('cycle_count', 0),
+            timestamp=timestamp
+        )
+        db.session.add(telemetry)
+        
+        # Create path log with client timestamp
+        path = PathLog(
+            robot_id=robot_id,
+            pos_x=data.get('x', 50.0),
+            pos_y=data.get('y', 50.0),
+            orientation=data.get('orientation', 0.0),
+            timestamp=timestamp
+        )
+        db.session.add(path)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Telemetry received'
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/robot/commands', methods=['GET'])
+@login_required
+def get_commands():
+    """Send pending commands to robot client"""
+    try:
+        robot_id = request.args.get('robot_id', 1, type=int)
+        
+        # Get pending commands for this robot
+        commands = pending_commands.get(robot_id, [])
+        
+        # Clear commands after sending
+        if robot_id in pending_commands:
+            pending_commands[robot_id] = []
+        
+        return jsonify(commands), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/robot/command', methods=['POST'])
+@login_required
+def send_command():
+    """Queue a command to be sent to robot client"""
+    try:
+        data = request.get_json()
+        
+        robot_id = data.get('robot_id', 1)
+        command = data.get('command', '')
+        
+        # Check if user has access to this robot
+        if not user_can_access_robot(robot_id):
+            return jsonify({
+                'status': 'error',
+                'message': 'Access denied to this robot'
+            }), 403
+        
+        # Initialize command queue for robot if doesn't exist
+        if robot_id not in pending_commands:
+            pending_commands[robot_id] = []
+        
+        # Add command to queue
+        pending_commands[robot_id].append({
+            'command': command,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Command "{command}" queued for robot {robot_id}'
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@app.route('/api/robots', methods=['GET'])
+@login_required
+def get_robots():
+    """Get list of all robots for current user (or all if admin)"""
+    try:
+        # Admin can see all robots
+        if current_user.username == 'admin':
+            robots = Robot.query.all()
+        else:
+            # Regular users see only their assigned robots
+            robots = Robot.query.filter_by(assigned_to=current_user.id).all()
+        
+        robot_list = []
+        for robot in robots:
+            # Get latest telemetry
+            latest_telemetry = TelemetryLog.query.filter_by(robot_id=robot.id).order_by(TelemetryLog.timestamp.desc()).first()
+            
+            robot_list.append({
+                'id': robot.id,
+                'serial_number': robot.serial_number,
+                'model_type': robot.model_type,
+                'status': latest_telemetry.status_code if latest_telemetry else 'OFFLINE',
+                'last_seen': latest_telemetry.timestamp.isoformat() if latest_telemetry else None
+            })
+        
+        return jsonify(robot_list), 200
+        
+    except Exception as e:
+        print(f"Error in get_robots: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
 if __name__ == '__main__':
     # Ensure DB directory exists
     if not os.path.exists('database'):
         os.makedirs('database')
     with app.app_context():
         db.create_all()
+    # Get debug and port from environment
     # Get debug and port from environment
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.getenv('PORT', 5001))

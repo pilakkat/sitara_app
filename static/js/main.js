@@ -9,6 +9,10 @@ let lastLogCount = 0;
 let isLiveMode = true;
 let pollingIntervals = [];
 
+// Current robot selection
+let currentRobotId = null;
+let availableRobots = [];
+
 // Chart.js instances
 let batteryChart = null;
 let tempChart = null;
@@ -19,6 +23,56 @@ let currentTimelineIndex = 0;
 let isTimelineDragging = false;
 let timelineAutoUpdate = true;
 
+// Load available robots
+function loadRobots() {
+    $.get('/api/robots')
+        .done(function(robots) {
+            console.log("Available robots:", robots);
+            availableRobots = robots;
+            
+            const selector = $('#robotSelector');
+            selector.empty();
+            
+            if (robots.length === 0) {
+                selector.append('<option value="">No robots available</option>');
+                return;
+            }
+            
+            robots.forEach(robot => {
+                const statusBadge = robot.status === 'OFFLINE' ? '⚫' : '🟢';
+                selector.append(`<option value="${robot.id}">${statusBadge} ${robot.serial_number} (${robot.status})</option>`);
+            });
+            
+            // Select first robot by default
+            currentRobotId = robots[0].id;
+            selector.val(currentRobotId);
+        })
+        .fail(function(error) {
+            console.error("Failed to load robots:", error);
+            $('#robotSelector').html('<option value="">Error loading robots</option>');
+        });
+}
+
+// Switch to different robot
+window.switchRobot = function() {
+    const selectedId = $('#robotSelector').val();
+    if (selectedId && selectedId !== currentRobotId) {
+        console.log("Switching to robot:", selectedId);
+        currentRobotId = parseInt(selectedId);
+        
+        // Clear path history to force full reload for new robot
+        pathHistory = [];
+        
+        // Refresh all data for new robot
+        if (isLiveMode) {
+            stopPolling();
+            startPolling();
+        } else {
+            loadHistoricalData();
+        }
+    }
+};
+
 // Ensure functions are available globally for button onclick events
 window.sendCommand = function(cmd) {
     console.log("Attempting to send command:", cmd);
@@ -26,12 +80,12 @@ window.sendCommand = function(cmd) {
     updateLog(`> SENDING COMMAND: ${cmd}...`);
 
     $.ajax({
-        url: '/api/command',
+        url: '/api/robot/command',
         type: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ command: cmd }),
+        data: JSON.stringify({ command: cmd, robot_id: currentRobotId || 1 }),
         success: function(response) {
-            updateLog(`> ACK: ${response.msg}`);
+            updateLog(`> ACK: ${response.message}`);
         },
         error: function(err) {
             console.error("Command Error:", err);
@@ -75,6 +129,9 @@ window.loadLiveData = function() {
     // Clear date selector
     $('#dateSelector').val('');
     $('#dataMode').text('MODE: LIVE');
+    
+    // Clear existing path history to force full reload
+    pathHistory = [];
     
     // Restart live polling
     startPolling();
@@ -150,6 +207,9 @@ $(document).ready(function() {
     // Only run polling if we are actually on the dashboard page
     if ($('#dashboard-view').length > 0) {
         console.log("Dashboard View Detected. Initializing Telemetry Stream...");
+        
+        // Load available robots first
+        loadRobots();
         
         // Initialize canvas for path visualization
         initPathCanvas();
@@ -232,7 +292,8 @@ function initPathCanvas() {
  * Fetches robot telemetry data from the Python backend
  */
 function fetchTelemetry() {
-    $.getJSON('/api/telemetry', function(data) {
+    const params = currentRobotId ? `?robot_id=${currentRobotId}` : '';
+    $.getJSON('/api/telemetry' + params, function(data) {
         updateTelemetryDisplay(data);
     }).fail(function(xhr, status, error) {
         console.warn("Telemetry endpoint unreachable:", error);
@@ -246,7 +307,8 @@ function fetchTelemetry() {
  * Fetch historical telemetry for specific date
  */
 function fetchHistoricalTelemetry(date) {
-    $.getJSON('/api/telemetry_at_time?date=' + date, function(data) {
+    const params = `?date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    $.getJSON('/api/telemetry_at_time' + params, function(data) {
         updateTelemetryDisplay(data);
     }).fail(function(xhr, status, error) {
         console.warn("No telemetry data for this date:", error);
@@ -310,16 +372,60 @@ function updateTelemetryDisplay(data) {
 
 /**
  * Fetches and draws the robot's path history
+ * In live mode, loads incrementally after initial full load
  */
 function fetchPathHistory() {
-    $.getJSON('/api/path_history', function(data) {
-        if (!pathCtx || !data || data.length === 0) return;
+    let params = currentRobotId ? `?robot_id=${currentRobotId}` : '';
+    
+    // If we have path history, only fetch new points after the last timestamp
+    if (isLiveMode && pathHistory && pathHistory.length > 0) {
+        const lastTimestamp = pathHistory[pathHistory.length - 1].timestamp;
+        params += (params ? '&' : '?') + 'since=' + encodeURIComponent(lastTimestamp);
+        console.log("Fetching incremental path since:", lastTimestamp);
+    } else {
+        console.log("Fetching full path history");
+    }
+    
+    $.getJSON('/api/path_history' + params, function(data) {
+        if (!pathCtx) return;
         
-        pathHistory = data;
+        // Handle data based on mode and existing history
+        if (isLiveMode && pathHistory && pathHistory.length > 0 && data && data.length > 0) {
+            // Check for large position jump (indicates robot restart or teleport)
+            const lastPos = pathHistory[pathHistory.length - 1];
+            const newPos = data[0];
+            const distanceSquared = Math.pow(newPos.x - lastPos.x, 2) + Math.pow(newPos.y - lastPos.y, 2);
+            
+            // If position jumped more than 20 units, robot likely restarted - reload full path
+            if (distanceSquared > 400) {
+                console.log("Large position jump detected, reloading full path");
+                pathHistory = [];
+                // Fetch full path by removing 'since' parameter
+                const fullParams = currentRobotId ? `?robot_id=${currentRobotId}` : '';
+                $.getJSON('/api/path_history' + fullParams, function(fullData) {
+                    if (fullData && fullData.length > 0) {
+                        pathHistory = fullData;
+                        drawPath();
+                        updateTimelineData(pathHistory);
+                    }
+                });
+                return;
+            }
+            
+            // Append new points to existing path (incremental)
+            console.log("Appending", data.length, "new path points");
+            pathHistory = pathHistory.concat(data);
+        } else if (data && data.length > 0) {
+            // Replace entire path (initial load or historical mode)
+            console.log("Loading", data.length, "path points");
+            pathHistory = data;
+        }
+        // If data is empty and we have existing history, keep it (no new points yet)
+        
         drawPath();
         
         // Update timeline with path data
-        updateTimelineData(data);
+        updateTimelineData(pathHistory);
     }).fail(function() {
         console.warn("Path history endpoint unreachable.");
     });
@@ -329,7 +435,8 @@ function fetchPathHistory() {
  * Fetch historical path for specific date
  */
 function fetchHistoricalPath(date) {
-    $.getJSON('/api/path_history?date=' + date, function(data) {
+    const params = `?date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    $.getJSON('/api/path_history' + params, function(data) {
         if (!pathCtx || !data || data.length === 0) {
             console.warn("No path data for this date");
             pathHistory = [];

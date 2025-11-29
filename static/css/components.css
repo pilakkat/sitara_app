@@ -284,6 +284,33 @@ input[type="date"].form-control-cyber::placeholder {
     color: rgba(0, 243, 255, 0.5);
 }
 
+/* Select dropdown cyber theme */
+select.form-control-cyber,
+.form-select.form-control-cyber {
+    background-color: rgba(10, 10, 30, 0.9);
+    border: 1px solid var(--neon-blue);
+    color: var(--neon-blue);
+    padding: 0.375rem 2rem 0.375rem 0.75rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2300F3FF' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
+}
+
+select.form-control-cyber:focus,
+.form-select.form-control-cyber:focus {
+    background-color: rgba(10, 10, 40, 1);
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+    color: var(--neon-blue);
+}
+
+select.form-control-cyber option,
+.form-select.form-control-cyber option {
+    background-color: rgb(10, 10, 30);
+    color: var(--neon-blue);
+}
+
 .btn-outline-info {
     background: rgba(0, 180, 255, 0.1);
     border: 1px solid rgba(0, 180, 255, 0.4);
