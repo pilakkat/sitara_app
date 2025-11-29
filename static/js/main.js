@@ -6,6 +6,7 @@
 let pathCanvas, pathCtx;
 let pathHistory = [];
 let lastLogCount = 0;
+let lastLogSignature = '';  // Track content signature for change detection
 let isLiveMode = true;
 let pollingIntervals = [];
 
@@ -656,10 +657,27 @@ function fetchHistoricalLogs(date) {
  * Display logs in terminal
  */
 function displayLogs(data) {
-    if (!data || data.length === 0) return;
+    if (!data || data.length === 0) {
+        // If no data, show initial message only if terminal is empty
+        if ($('#sysLogs').children().length === 0) {
+            $('#sysLogs').html('<div class="log-entry text-warning">[S4-CLOUD] No telemetry data available.</div>');
+        }
+        return;
+    }
     
-    // Only update if we have new logs (skip for historical mode)
-    if (isLiveMode && data.length === lastLogCount) return;
+    // Create a signature of the log content (excluding timestamps)
+    // This signature includes: status, battery, temp, load for each log
+    const currentSignature = data.map(log => 
+        `${log.status}|${log.battery.toFixed(2)}|${log.temp}|${log.load}`
+    ).join(';;');
+    
+    // Only update if content has actually changed
+    if (currentSignature === lastLogSignature) {
+        return; // No change in actual data
+    }
+    
+    // Update the signature
+    lastLogSignature = currentSignature;
     lastLogCount = data.length;
     
     let logs = $('#sysLogs');
