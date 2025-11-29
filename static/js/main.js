@@ -80,6 +80,69 @@ window.loadLiveData = function() {
     startPolling();
 };
 
+// Navigate date by offset (days)
+window.navigateDate = function(offset) {
+    const dateInput = $('#dateSelector');
+    let currentDate = dateInput.val();
+    
+    // If no date selected, use today
+    if (!currentDate) {
+        currentDate = new Date().toISOString().split('T')[0];
+    }
+    
+    // Parse and add offset
+    const date = new Date(currentDate);
+    date.setDate(date.getDate() + offset);
+    
+    // Get min and max dates from the input
+    const minDate = dateInput.attr('min');
+    const maxDate = dateInput.attr('max');
+    const newDateStr = date.toISOString().split('T')[0];
+    
+    // Check bounds - disable button instead of alert
+    if (minDate && newDateStr < minDate) {
+        return;
+    }
+    if (maxDate && newDateStr > maxDate) {
+        return;
+    }
+    
+    // Update date selector and load data
+    dateInput.val(newDateStr);
+    loadHistoricalData();
+    
+    // Update button states
+    updateDateNavigationButtons();
+};
+
+// Update date navigation button states
+function updateDateNavigationButtons() {
+    const dateInput = $('#dateSelector');
+    const currentDate = dateInput.val();
+    
+    if (!currentDate) {
+        // No date selected, disable both
+        $('#btnPrevDay').prop('disabled', false);
+        $('#btnNextDay').prop('disabled', false);
+        return;
+    }
+    
+    const minDate = dateInput.attr('min');
+    const maxDate = dateInput.attr('max');
+    
+    // Check if previous day would be out of bounds
+    const prevDate = new Date(currentDate);
+    prevDate.setDate(prevDate.getDate() - 1);
+    const prevDateStr = prevDate.toISOString().split('T')[0];
+    $('#btnPrevDay').prop('disabled', minDate && prevDateStr < minDate);
+    
+    // Check if next day would be out of bounds
+    const nextDate = new Date(currentDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+    const nextDateStr = nextDate.toISOString().split('T')[0];
+    $('#btnNextDay').prop('disabled', maxDate && nextDateStr > maxDate);
+}
+
 $(document).ready(function() {
     console.log("SITARA SYSTEM: Core JS loaded.");
 
@@ -106,6 +169,12 @@ $(document).ready(function() {
         const minDate = new Date();
         minDate.setDate(minDate.getDate() - 7);
         $('#dateSelector').attr('min', minDate.toISOString().split('T')[0]);
+        
+        // Initialize button states
+        updateDateNavigationButtons();
+        
+        // Update button states when date changes
+        $('#dateSelector').on('change', updateDateNavigationButtons);
         
         // Start in live mode
         startPolling();
