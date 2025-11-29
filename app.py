@@ -145,6 +145,23 @@ def cleanup_old_data():
     db.session.commit()
     print("System Maintenance: Old logs purged.")
 
+# --- Helper Functions ---
+
+def format_timestamp(dt):
+    """
+    Format a datetime object to ISO format with UTC timezone.
+    If the datetime is naive (no timezone), assume it's UTC.
+    """
+    if dt is None:
+        return None
+    
+    # If naive (no timezone info), add UTC timezone
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    
+    # Return ISO format string with timezone (e.g., "2025-11-29T14:30:00+00:00")
+    return dt.isoformat()
+
 # --- Routes ---
 
 @login_manager.user_loader
@@ -279,7 +296,7 @@ def api_telemetry():
         "pos_y": latest_path.pos_y if latest_path else 50,
         "orientation": latest_path.orientation if latest_path else 0,
         "cycles": latest_telem.cycle_counter or 0,
-        "timestamp": latest_telem.timestamp.isoformat() if latest_telem.timestamp else None
+        "timestamp": format_timestamp(latest_telem.timestamp) if latest_telem.timestamp else None
     })
 
 @app.route('/api/telemetry_history')
@@ -328,7 +345,7 @@ def api_telemetry_history():
         logs = list(reversed(logs))
     
     log_data = [{
-        "timestamp": log.timestamp.isoformat(),
+        "timestamp": format_timestamp(log.timestamp),
         "battery": log.battery_voltage,
         "temp": log.cpu_temp,
         "load": log.motor_load,
@@ -403,7 +420,7 @@ def api_path_history():
     path_data = [{
         "x": p.pos_x,
         "y": p.pos_y,
-        "timestamp": p.timestamp.isoformat()
+        "timestamp": format_timestamp(p.timestamp)
     } for p in paths]
     
     return jsonify(path_data)
@@ -473,8 +490,8 @@ def api_robot_date_range():
     result = {
         "earliest_date": earliest.date().isoformat() if earliest else None,
         "latest_date": latest.date().isoformat() if latest else None,
-        "earliest_timestamp": earliest.isoformat() if earliest else None,
-        "latest_timestamp": latest.isoformat() if latest else None,
+        "earliest_timestamp": format_timestamp(earliest) if earliest else None,
+        "latest_timestamp": format_timestamp(latest) if latest else None,
         "robot_id": robot.id,
         "serial_number": robot.serial_number
     }
@@ -538,7 +555,7 @@ def api_telemetry_at_time():
             "pos_y": latest_path.pos_y if latest_path else 50,
             "orientation": latest_path.orientation if latest_path else 0,
             "cycles": latest_telem.cycle_counter or 0,
-            "timestamp": latest_telem.timestamp.isoformat() if latest_telem.timestamp else None
+            "timestamp": format_timestamp(latest_telem.timestamp) if latest_telem.timestamp else None
         })
     except ValueError:
         return jsonify({"error": "Invalid date format"}), 400
@@ -603,7 +620,7 @@ def api_health_history():
     temp_data = []
     
     for log in logs:
-        timestamp = log.timestamp.isoformat()
+        timestamp = format_timestamp(log.timestamp)
         battery_data.append({
             "time": timestamp,
             "value": log.battery_voltage
@@ -773,7 +790,7 @@ def get_robots():
                 'serial_number': robot.serial_number,
                 'model_type': robot.model_type,
                 'status': latest_telemetry.status_code if latest_telemetry else 'OFFLINE',
-                'last_seen': latest_telemetry.timestamp.isoformat() if latest_telemetry else None
+                'last_seen': format_timestamp(latest_telemetry.timestamp) if latest_telemetry else None
             })
         
         return jsonify(robot_list), 200
