@@ -245,6 +245,22 @@ class RobotClient:
             self.status = "MOVING"
             self.motor_load = 65
             self.current_command = 'move_forward'
+        elif cmd_type == 'move_up':
+            self.status = "MOVING"
+            self.motor_load = 65
+            self.current_command = 'move_up'
+        elif cmd_type == 'move_down':
+            self.status = "MOVING"
+            self.motor_load = 65
+            self.current_command = 'move_down'
+        elif cmd_type == 'move_left':
+            self.status = "MOVING"
+            self.motor_load = 65
+            self.current_command = 'move_left'
+        elif cmd_type == 'move_right':
+            self.status = "MOVING"
+            self.motor_load = 65
+            self.current_command = 'move_right'
         elif cmd_type == 'stop' or cmd_type == 'halt':
             self.status = "STANDBY"
             self.motor_load = 0
@@ -258,20 +274,33 @@ class RobotClient:
     
     def update_robot_state(self):
         """Update robot's internal state based on current command"""
-        # Update position based on status
+        # Update position based on status and current command
         if self.status == "MOVING":
-            # Move forward in current orientation
-            rad = math.radians(self.position['orientation'])
-            self.position['x'] += self.speed * math.cos(rad)
-            self.position['y'] += self.speed * math.sin(rad)
+            if self.current_command == 'move_up':
+                # Move up (decrease Y)
+                self.position['y'] -= self.speed
+            elif self.current_command == 'move_down':
+                # Move down (increase Y)
+                self.position['y'] += self.speed
+            elif self.current_command == 'move_left':
+                # Move left (decrease X)
+                self.position['x'] -= self.speed
+            elif self.current_command == 'move_right':
+                # Move right (increase X)
+                self.position['x'] += self.speed
+            elif self.current_command == 'move_forward':
+                # Move forward in current orientation
+                rad = math.radians(self.position['orientation'])
+                self.position['x'] += self.speed * math.cos(rad)
+                self.position['y'] += self.speed * math.sin(rad)
+                
+                # Slight random orientation change for forward movement
+                self.position['orientation'] += random.uniform(-5, 5)
+                self.position['orientation'] = self.position['orientation'] % 360
             
             # Keep within bounds (0-100)
             self.position['x'] = max(0, min(100, self.position['x']))
             self.position['y'] = max(0, min(100, self.position['y']))
-            
-            # Slight random orientation change
-            self.position['orientation'] += random.uniform(-5, 5)
-            self.position['orientation'] = self.position['orientation'] % 360
             
             # Battery drain
             self.battery_voltage -= 0.001
