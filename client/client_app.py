@@ -1045,13 +1045,13 @@ def main():
     UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5002'))
     
     # Allow command line override
-    # Usage: python client_app.py [robot_id] [username] [password] [--port PORT]
+    # Usage: python client_app.py [robot_id] [username] [password] [port]
     import argparse
     parser = argparse.ArgumentParser(description='SITARA Robot Client')
     parser.add_argument('robot_id', type=int, nargs='?', default=ROBOT_ID, help='Robot ID')
     parser.add_argument('username', nargs='?', default=USERNAME, help='Username')
     parser.add_argument('password', nargs='?', default=PASSWORD, help='Password')
-    parser.add_argument('--port', '-p', type=int, default=UI_PORT, help='Control UI port (default: 5002)')
+    parser.add_argument('port', type=int, nargs='?', default=UI_PORT, help='Control UI port (default: 5002)')
     args = parser.parse_args()
     
     ROBOT_ID = args.robot_id
