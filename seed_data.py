@@ -5,8 +5,23 @@ import math
 from datetime import datetime, timedelta, timezone
 
 # --- CONFIGURATION ---
-ROBOT_SERIAL = "SITARA-X1"
-DAYS_TO_GENERATE = 7  # One week of data
+ROBOTS = [
+    {
+        'serial': 'SITARA32DOFH0001',
+        'operator': 'deepak',
+        'days': 10
+    },
+    {
+        'serial': 'SITARA32DOFH0002',
+        'operator': 'lithin',  # operator2 username
+        'days': 6
+    },
+    {
+        'serial': 'SITARA32DOFH0003',
+        'operator': 'khaleel',  # operator3 username
+        'days': 2
+    }
+]
 TELEMETRY_INTERVAL_MINS = 5  # Log health every 5 mins
 PATH_INTERVAL_MINS = 1       # Log movement every 1 min
 TELEMETRY_CHANGE_THRESHOLD = {
@@ -15,35 +30,36 @@ TELEMETRY_CHANGE_THRESHOLD = {
     'load': 5            # Log if load changes by more than 5%
 }
 
-def generate_synthetic_data():
-    print(f"--- SEEDING DATA FOR {ROBOT_SERIAL} (Last {DAYS_TO_GENERATE} days) ---")
+def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_generate):
+    """Generate synthetic data for a single robot"""
+    print(f"--- SEEDING DATA FOR {robot_serial} (Last {days_to_generate} days, assigned to {operator_username}) ---")
     
     with app.app_context():
-        # 0. Get operator user (deepak) for robot assignment
-        operator_user = User.query.filter_by(username='deepak').first()
+        # 0. Get operator user for robot assignment
+        operator_user = User.query.filter_by(username=operator_username).first()
         if not operator_user:
-            print("WARNING: Operator user 'deepak' not found. Please run init_db.py first!")
+            print(f"WARNING: Operator user '{operator_username}' not found. Please run init_db.py first!")
             return
         
-        # 1. Ensure Robot Exists and is assigned to operator (deepak)
-        robot = Robot.query.filter_by(serial_number=ROBOT_SERIAL).first()
+        # 1. Ensure Robot Exists and is assigned to operator
+        robot = Robot.query.filter_by(serial_number=robot_serial).first()
         if not robot:
             robot = Robot(
-                serial_number=ROBOT_SERIAL, 
+                serial_number=robot_serial, 
                 model_type="32DOF-HUMANOID",
                 assigned_to=operator_user.id
             )
             db.session.add(robot)
             db.session.commit()
-            print(f"Created new robot: {ROBOT_SERIAL} (assigned to operator 'deepak')")
+            print(f"Created new robot: {robot_serial} (assigned to operator '{operator_username}')")
         else:
             # Update assignment to operator if different
             if robot.assigned_to != operator_user.id:
                 robot.assigned_to = operator_user.id
                 db.session.commit()
-                print(f"Updated robot assignment: {ROBOT_SERIAL} (now assigned to operator 'deepak')")
+                print(f"Updated robot assignment: {robot_serial} (now assigned to operator '{operator_username}')")
             else:
-                print(f"Found existing robot: {ROBOT_SERIAL} (assigned to operator 'deepak')")
+                print(f"Found existing robot: {robot_serial} (assigned to operator '{operator_username}')")
 
         # 2. Clear old data for a fresh start
         print("Clearing old data...")
@@ -52,7 +68,7 @@ def generate_synthetic_data():
         db.session.commit()
 
         end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(days=DAYS_TO_GENERATE)
+        start_time = end_time - timedelta(days=days_to_generate)
         
         telemetry_buffer = []
         path_buffer = []
@@ -78,7 +94,7 @@ def generate_synthetic_data():
         idle_until = None   # Track when robot is idle/stationary
         
         # Loop through time minute by minute
-        total_minutes = DAYS_TO_GENERATE * 24 * 60
+        total_minutes = days_to_generate * 24 * 60
         print(f"Generating {total_minutes} minutes of data...")
         
         for i in range(total_minutes):
@@ -289,6 +305,24 @@ def generate_synthetic_data():
         print(f"Total Path Logs: {total_paths}")
         print(f"Total Telemetry Logs: {total_telemetry}")
         print(f"Time Range: {start_time.strftime('%Y-%m-%d %H:%M')} to {end_time.strftime('%Y-%m-%d %H:%M')}")
+
+def generate_synthetic_data():
+    """Generate synthetic data for all configured robots"""
+    print("=" * 80)
+    print("SITARA DATA SEEDING - MULTIPLE ROBOTS")
+    print("=" * 80)
+    
+    for robot_config in ROBOTS:
+        generate_synthetic_data_for_robot(
+            robot_serial=robot_config['serial'],
+            operator_username=robot_config['operator'],
+            days_to_generate=robot_config['days']
+        )
+        print()  # Blank line between robots
+    
+    print("=" * 80)
+    print("ALL ROBOTS SEEDED SUCCESSFULLY")
+    print("=" * 80)
 
 if __name__ == "__main__":
     generate_synthetic_data()
