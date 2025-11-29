@@ -1,4 +1,4 @@
-from app import app, db, Robot, TelemetryLog, PathLog
+from app import app, db, Robot, TelemetryLog, PathLog, User
 import random
 import math
 
@@ -19,15 +19,31 @@ def generate_synthetic_data():
     print(f"--- SEEDING DATA FOR {ROBOT_SERIAL} (Last {DAYS_TO_GENERATE} days) ---")
     
     with app.app_context():
-        # 1. Ensure Robot Exists
+        # 0. Get operator user (deepak) for robot assignment
+        operator_user = User.query.filter_by(username='deepak').first()
+        if not operator_user:
+            print("WARNING: Operator user 'deepak' not found. Please run init_db.py first!")
+            return
+        
+        # 1. Ensure Robot Exists and is assigned to operator (deepak)
         robot = Robot.query.filter_by(serial_number=ROBOT_SERIAL).first()
         if not robot:
-            robot = Robot(serial_number=ROBOT_SERIAL, model_type="32DOF-HUMANOID")
+            robot = Robot(
+                serial_number=ROBOT_SERIAL, 
+                model_type="32DOF-HUMANOID",
+                assigned_to=operator_user.id
+            )
             db.session.add(robot)
             db.session.commit()
-            print(f"Created new robot: {ROBOT_SERIAL}")
+            print(f"Created new robot: {ROBOT_SERIAL} (assigned to operator 'deepak')")
         else:
-            print(f"Found existing robot: {ROBOT_SERIAL}")
+            # Update assignment to operator if different
+            if robot.assigned_to != operator_user.id:
+                robot.assigned_to = operator_user.id
+                db.session.commit()
+                print(f"Updated robot assignment: {ROBOT_SERIAL} (now assigned to operator 'deepak')")
+            else:
+                print(f"Found existing robot: {ROBOT_SERIAL} (assigned to operator 'deepak')")
 
         # 2. Clear old data for a fresh start
         print("Clearing old data...")
