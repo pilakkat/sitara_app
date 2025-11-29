@@ -9,6 +9,10 @@ let lastLogCount = 0;
 let isLiveMode = true;
 let pollingIntervals = [];
 
+// Chart.js instances
+let batteryChart = null;
+let tempChart = null;
+
 // Ensure functions are available globally for button onclick events
 window.sendCommand = function(cmd) {
     console.log("Attempting to send command:", cmd);
@@ -52,6 +56,7 @@ window.loadHistoricalData = function() {
     fetchHistoricalTelemetry(selectedDate);
     fetchHistoricalPath(selectedDate);
     fetchHistoricalLogs(selectedDate);
+    fetchHealthHistory(selectedDate);
 };
 
 // Return to live mode
@@ -77,6 +82,9 @@ $(document).ready(function() {
         
         // Initialize canvas for path visualization
         initPathCanvas();
+        
+        // Initialize health charts
+        initHealthCharts();
         
         // Set date picker to today
         const today = new Date().toISOString().split('T')[0];
@@ -106,11 +114,13 @@ function startPolling() {
     fetchTelemetry();
     fetchPathHistory();
     fetchTelemetryLogs();
+    fetchHealthHistory();
     
     // Then start the polling loops
     pollingIntervals.push(setInterval(fetchTelemetry, 2000));        // Update every 2 seconds
     pollingIntervals.push(setInterval(fetchPathHistory, 3000));      // Update path every 3 seconds
     pollingIntervals.push(setInterval(fetchTelemetryLogs, 5000));    // Update logs every 5 seconds
+    pollingIntervals.push(setInterval(fetchHealthHistory, 10000));   // Update charts every 10 seconds
 }
 
 /**
@@ -380,4 +390,211 @@ function updateLog(message) {
     if (logs.children().length > 30) {
         logs.children().last().remove();
     }
+}
+
+/**
+ * Initialize health monitoring charts
+ */
+function initHealthCharts() {
+    console.log("Initializing health charts...");
+    
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error("Chart.js is not loaded!");
+        return;
+    }
+    
+    // Check if canvas elements exist
+    const batteryCanvas = document.getElementById('batteryChart');
+    const tempCanvas = document.getElementById('tempChart');
+    
+    if (!batteryCanvas || !tempCanvas) {
+        console.error("Chart canvas elements not found!");
+        return;
+    }
+    
+    console.log("Canvas elements found, creating charts...");
+    
+    // Common chart configuration
+    const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false,
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: 'rgba(0, 243, 255, 1)',
+                bodyColor: 'rgba(200, 200, 200, 1)',
+                borderColor: 'rgba(0, 243, 255, 0.5)',
+                borderWidth: 1
+            }
+        },
+        scales: {
+            x: {
+                type: 'time',
+                time: {
+                    unit: 'minute',
+                    displayFormats: {
+                        minute: 'HH:mm'
+                    }
+                },
+                grid: {
+                    color: 'rgba(0, 243, 255, 0.1)'
+                },
+                ticks: {
+                    color: 'rgba(0, 243, 255, 0.6)',
+                    maxTicksLimit: 6,
+                    font: {
+                        size: 9
+                    }
+                }
+            },
+            y: {
+                grid: {
+                    color: 'rgba(0, 243, 255, 0.1)'
+                },
+                ticks: {
+                    color: 'rgba(0, 243, 255, 0.6)',
+                    font: {
+                        size: 9
+                    }
+                }
+            }
+        },
+        elements: {
+            point: {
+                radius: 2,
+                hoverRadius: 4
+            },
+            line: {
+                tension: 0.4
+            }
+        }
+    };
+
+    // Battery Chart
+    const batteryCtx = batteryCanvas.getContext('2d');
+    batteryChart = new Chart(batteryCtx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Battery Voltage',
+                data: [],
+                borderColor: 'rgba(0, 243, 255, 0.8)',
+                backgroundColor: 'rgba(0, 243, 255, 0.1)',
+                fill: true,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            ...commonOptions,
+            scales: {
+                ...commonOptions.scales,
+                y: {
+                    ...commonOptions.scales.y,
+                    suggestedMin: 20,
+                    suggestedMax: 26,
+                    ticks: {
+                        ...commonOptions.scales.y.ticks,
+                        callback: function(value) {
+                            return value + 'V';
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    console.log("Battery chart created:", batteryChart);
+
+    // Temperature Chart
+    const tempCtx = tempCanvas.getContext('2d');
+    tempChart = new Chart(tempCtx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'CPU Temperature',
+                data: [],
+                borderColor: 'rgba(255, 100, 100, 0.8)',
+                backgroundColor: 'rgba(255, 100, 100, 0.1)',
+                fill: true,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            ...commonOptions,
+            scales: {
+                ...commonOptions.scales,
+                y: {
+                    ...commonOptions.scales.y,
+                    suggestedMin: 30,
+                    suggestedMax: 70,
+                    ticks: {
+                        ...commonOptions.scales.y.ticks,
+                        callback: function(value) {
+                            return value + '°C';
+                        }
+                    }
+                }
+            }
+        }
+    });
+    
+    console.log("Temperature chart created:", tempChart);
+
+    // Initial data fetch
+    fetchHealthHistory();
+}
+
+/**
+ * Fetch health history data and update charts
+ */
+function fetchHealthHistory(date = null) {
+    const url = date ? `/api/health_history?date=${date}` : '/api/health_history';
+    
+    console.log("Fetching health history from:", url);
+    
+    $.getJSON(url, function(data) {
+        console.log("Health history data received:", data);
+        updateHealthCharts(data);
+    }).fail(function(xhr, status, error) {
+        console.error("Health history endpoint unreachable:", error);
+    });
+}
+
+/**
+ * Update health charts with new data
+ */
+function updateHealthCharts(data) {
+    console.log("Updating charts with data:", data);
+    
+    if (!batteryChart || !tempChart) {
+        console.error("Charts not initialized!");
+        return;
+    }
+    
+    console.log("Battery data points:", data.battery.length);
+    console.log("Temperature data points:", data.temperature.length);
+    
+    // Update battery chart
+    batteryChart.data.datasets[0].data = data.battery.map(point => ({
+        x: new Date(point.time),
+        y: point.value
+    }));
+    batteryChart.update('none'); // 'none' for no animation
+    
+    console.log("Battery chart updated");
+    
+    // Update temperature chart
+    tempChart.data.datasets[0].data = data.temperature.map(point => ({
+        x: new Date(point.time),
+        y: point.value
+    }));
+    tempChart.update('none');
+    
+    console.log("Temperature chart updated");
 }

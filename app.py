@@ -387,6 +387,62 @@ def api_command():
     print(f"Command Sent to Robot: {cmd}")
     return jsonify({"status": "success", "msg": f"Command '{cmd}' executed."})
 
+@app.route('/api/health_history')
+@login_required
+def api_health_history():
+    """Returns battery and temperature history for the past 2 hours"""
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify({"battery": [], "temperature": []})
+    
+    # Get data from past 2 hours
+    two_hours_ago = datetime.now(timezone.utc) - timedelta(hours=2)
+    
+    # Check if date parameter is provided for historical data
+    date_param = request.args.get('date')
+    
+    if date_param:
+        # For historical mode, get 2 hours of data from that day
+        try:
+            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
+            # Get last 2 hours of the selected day
+            end_of_day = target_date.replace(hour=23, minute=59, second=59)
+            two_hours_ago = end_of_day - timedelta(hours=2)
+            
+            logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
+                .filter(TelemetryLog.timestamp >= two_hours_ago)\
+                .filter(TelemetryLog.timestamp <= end_of_day)\
+                .order_by(TelemetryLog.timestamp.asc())\
+                .all()
+        except ValueError:
+            return jsonify({"error": "Invalid date format"}), 400
+    else:
+        # Live mode - get last 2 hours
+        logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
+            .filter(TelemetryLog.timestamp >= two_hours_ago)\
+            .order_by(TelemetryLog.timestamp.asc())\
+            .all()
+    
+    battery_data = []
+    temp_data = []
+    
+    for log in logs:
+        timestamp = log.timestamp.isoformat()
+        battery_data.append({
+            "time": timestamp,
+            "value": log.battery_voltage
+        })
+        temp_data.append({
+            "time": timestamp,
+            "value": log.cpu_temp
+        })
+    
+    return jsonify({
+        "battery": battery_data,
+        "temperature": temp_data
+    })
+
 if __name__ == '__main__':
     # Ensure DB directory exists
     if not os.path.exists('database'):

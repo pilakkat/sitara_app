@@ -37,12 +37,31 @@
 
     <div class="col-lg-4">
         <div class="bg-panel hud-card text-center">
-            <h5 class="text-muted">SYSTEM HEALTH</h5>
-            <h1 class="text-neon" id="batteryVal">-- V</h1>
-            <small>BATTERY (24V ARCH)</small>
+            <h5 class="text-muted mb-3">SYSTEM HEALTH</h5>
+            
+            <!-- Battery Voltage Display -->
+            <div class="mb-3">
+                <h1 class="text-neon mb-0" id="batteryVal">-- V</h1>
+                <small class="text-muted">BATTERY (24V ARCH)</small>
+            </div>
+            
+            <!-- Battery History Chart -->
+            <div class="chart-container mb-3" style="position: relative; height: 120px;">
+                <canvas id="batteryChart"></canvas>
+            </div>
+            
             <hr class="border-secondary">
-            <h2 id="tempVal">-- °C</h2>
-            <small>CORE TEMP</small>
+            
+            <!-- Temperature Display -->
+            <div class="mb-3">
+                <h2 class="mb-0" id="tempVal">-- °C</h2>
+                <small class="text-muted">CORE TEMP</small>
+            </div>
+            
+            <!-- Temperature History Chart -->
+            <div class="chart-container" style="position: relative; height: 120px;">
+                <canvas id="tempChart"></canvas>
+            </div>
         </div>
 
         <div class="bg-panel hud-card">
@@ -60,4 +79,7 @@
         </div>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 {% endblock %}

@@ -252,3 +252,15 @@ input[type="date"].form-control-cyber::placeholder {
     color: rgba(0, 220, 255, 1);
     box-shadow: 0 0 10px rgba(0, 180, 255, 0.3);
 }
+
+/* Chart Containers */
+.chart-container {
+    background: rgba(0, 10, 20, 0.5);
+    border: 1px solid rgba(0, 243, 255, 0.2);
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+
+.chart-container canvas {
+    max-height: 120px;
+}
