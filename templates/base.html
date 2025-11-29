@@ -18,10 +18,12 @@
             <a class="navbar-brand text-neon" href="{{ url_for('index') }}" style="font-family: var(--font-head); font-size: 1.5rem; font-weight: 700;">
                 <i class="bi bi-cpu"></i> SITARA DYNAMICS
             </a>
-            <div class="d-flex">
+            <div class="d-flex align-items-center gap-3">
                 {% if current_user.is_authenticated %}
-                    <span class="navbar-text me-3">OP: {{ current_user.username }}</span>
-                    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-danger">DISCONNECT</a>
+                    <span class="navbar-text mb-0">OP: {{ current_user.username }}</span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-logout">
+                        <i class="bi bi-box-arrow-right me-1"></i> LOGOUT
+                    </a>
                 {% elif request.endpoint != 'login' %}
                     <a href="{{ url_for('login') }}" class="btn btn-sm btn-cyber">LOGIN</a>
                 {% endif %}

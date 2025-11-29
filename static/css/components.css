@@ -148,6 +148,35 @@
     box-shadow: 0 0 20px var(--neon-blue);
 }
 
+/* Logout button - red variant */
+.btn-logout {
+    background: rgba(255, 70, 70, 0.1);
+    border: 1px solid #ff4646;
+    color: #ff6666;
+    font-family: var(--font-head);
+    font-weight: 600;
+    padding: 8px 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-logout:hover {
+    background: rgba(255, 70, 70, 0.2);
+    border-color: #ff6666;
+    color: #ff8888;
+    box-shadow: 0 0 15px rgba(255, 70, 70, 0.5);
+    transform: translateY(-1px);
+}
+
+.btn-logout:active {
+    transform: translateY(0);
+}
+
 /* Outline cyber button variant */
 .btn-outline-cyber {
     background: transparent;
