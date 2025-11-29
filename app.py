@@ -325,13 +325,25 @@ def api_telemetry_history():
     if date_param:
         # Parse the date and get data for that specific day
         try:
-            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
-            start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_of_day = start_of_day + timedelta(days=1)
+            # Get timezone offset from client (in minutes, e.g., -300 for EST)
+            tz_offset = request.args.get('tz_offset', type=int, default=0)
+            
+            # Parse date as naive datetime (without timezone)
+            target_date = datetime.fromisoformat(date_param)
+            
+            # This represents midnight in the CLIENT's timezone
+            # We need to convert it to UTC for database query
+            client_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Convert client's local midnight to UTC
+            # tz_offset is in minutes (negative for west of UTC, positive for east)
+            utc_offset = timedelta(minutes=-tz_offset)
+            start_of_day_utc = client_midnight - utc_offset
+            end_of_day_utc = start_of_day_utc + timedelta(days=1)
             
             logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
-                .filter(TelemetryLog.timestamp >= start_of_day)\
-                .filter(TelemetryLog.timestamp < end_of_day)\
+                .filter(TelemetryLog.timestamp >= start_of_day_utc)\
+                .filter(TelemetryLog.timestamp < end_of_day_utc)\
                 .order_by(TelemetryLog.timestamp.asc())\
                 .all()
         except ValueError:
@@ -382,14 +394,24 @@ def api_path_history():
     if date_param:
         # Parse the date and get data for that specific day
         try:
-            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
-            start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_of_day = start_of_day + timedelta(days=1)
+            # Get timezone offset from client (in minutes)
+            tz_offset = request.args.get('tz_offset', type=int, default=0)
+            
+            # Parse date as naive datetime
+            target_date = datetime.fromisoformat(date_param)
+            
+            # This represents midnight in the CLIENT's timezone
+            client_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            
+            # Convert client's local midnight to UTC
+            utc_offset = timedelta(minutes=-tz_offset)
+            start_of_day_utc = client_midnight - utc_offset
+            end_of_day_utc = start_of_day_utc + timedelta(days=1)
             
             # Get all path points for that day (sample every 5 minutes to avoid too much data)
             all_paths = PathLog.query.filter_by(robot_id=robot.id)\
-                .filter(PathLog.timestamp >= start_of_day)\
-                .filter(PathLog.timestamp < end_of_day)\
+                .filter(PathLog.timestamp >= start_of_day_utc)\
+                .filter(PathLog.timestamp < end_of_day_utc)\
                 .order_by(PathLog.timestamp.asc())\
                 .all()
             
@@ -525,21 +547,31 @@ def api_telemetry_at_time():
         return api_telemetry()
     
     try:
-        target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
-        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_of_day = start_of_day + timedelta(days=1)
+        # Get timezone offset from client (in minutes)
+        tz_offset = request.args.get('tz_offset', type=int, default=0)
+        
+        # Parse date as naive datetime
+        target_date = datetime.fromisoformat(date_param)
+        
+        # This represents midnight in the CLIENT's timezone
+        client_midnight = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Convert client's local midnight to UTC
+        utc_offset = timedelta(minutes=-tz_offset)
+        start_of_day_utc = client_midnight - utc_offset
+        end_of_day_utc = start_of_day_utc + timedelta(days=1)
         
         # Get the last telemetry entry for that day
         latest_telem = TelemetryLog.query.filter_by(robot_id=robot.id)\
-            .filter(TelemetryLog.timestamp >= start_of_day)\
-            .filter(TelemetryLog.timestamp < end_of_day)\
+            .filter(TelemetryLog.timestamp >= start_of_day_utc)\
+            .filter(TelemetryLog.timestamp < end_of_day_utc)\
             .order_by(TelemetryLog.timestamp.desc())\
             .first()
         
         # Get the last position for that day
         latest_path = PathLog.query.filter_by(robot_id=robot.id)\
-            .filter(PathLog.timestamp >= start_of_day)\
-            .filter(PathLog.timestamp < end_of_day)\
+            .filter(PathLog.timestamp >= start_of_day_utc)\
+            .filter(PathLog.timestamp < end_of_day_utc)\
             .order_by(PathLog.timestamp.desc())\
             .first()
         
@@ -597,14 +629,23 @@ def api_health_history():
     if date_param:
         # For historical mode, get 2 hours of data from that day
         try:
-            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
-            # Get last 2 hours of the selected day
-            end_of_day = target_date.replace(hour=23, minute=59, second=59)
-            two_hours_ago = end_of_day - timedelta(hours=2)
+            # Get timezone offset from client (in minutes)
+            tz_offset = request.args.get('tz_offset', type=int, default=0)
+            
+            # Parse date as naive datetime
+            target_date = datetime.fromisoformat(date_param)
+            
+            # Get end of day in client's timezone (23:59:59)
+            client_end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+            
+            # Convert to UTC
+            utc_offset = timedelta(minutes=-tz_offset)
+            end_of_day_utc = client_end_of_day - utc_offset
+            two_hours_before_utc = end_of_day_utc - timedelta(hours=2)
             
             logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
-                .filter(TelemetryLog.timestamp >= two_hours_ago)\
-                .filter(TelemetryLog.timestamp <= end_of_day)\
+                .filter(TelemetryLog.timestamp >= two_hours_before_utc)\
+                .filter(TelemetryLog.timestamp <= end_of_day_utc)\
                 .order_by(TelemetryLog.timestamp.asc())\
                 .all()
         except ValueError:

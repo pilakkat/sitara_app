@@ -28,7 +28,13 @@ let currentTimelineIndex = 0;
 let isTimelineDragging = false;
 let timelineAutoUpdate = true;
 
-// Helper function to get status icon based on robot status
+/**
+ * Get the current timezone offset in minutes
+ * Returns negative for west of UTC (e.g., -300 for EST), positive for east
+ */
+function getTimezoneOffset() {
+    return new Date().getTimezoneOffset();
+}// Helper function to get status icon based on robot status
 function getStatusIcon(status) {
     if (!status) return '⚫';
     
@@ -186,7 +192,9 @@ function fetchRobotDateRange() {
         
         // Update date picker constraints
         const today = new Date().toISOString().split('T')[0];
-        const maxDate = data.latest_date || today;
+        // In live mode, maxDate should always be today (to allow navigating to current day)
+        // In historical mode, use the database's latest date
+        const maxDate = isLiveMode ? today : (data.latest_date || today);
         const minDate = data.earliest_date || today;
         
         $('#dateSelector').attr('max', maxDate);
@@ -195,7 +203,7 @@ function fetchRobotDateRange() {
         // Update button states
         updateDateNavigationButtons();
         
-        console.log(`Date range set: ${minDate} to ${maxDate}`);
+        console.log(`Date range set: ${minDate} to ${maxDate} (Live mode: ${isLiveMode})`);
     }).fail(function(error) {
         console.error("Failed to fetch date range:", error);
         // Fallback to 30 days
@@ -275,6 +283,9 @@ window.loadLiveData = function() {
     // Update button states
     $('#btnLiveMode').addClass('active');
     $('#btnLoadHistorical').removeClass('active');
+    
+    // Refresh date range to ensure maxDate is set to today
+    fetchRobotDateRange();
     
     // Update navigation button states
     updateDateNavigationButtons();
@@ -415,6 +426,13 @@ function startPolling() {
     pollingIntervals.push(setInterval(fetchTelemetryLogs, 5000));    // Update logs every 5 seconds
     pollingIntervals.push(setInterval(fetchHealthHistory, 10000));   // Update charts every 10 seconds
     pollingIntervals.push(setInterval(updateAllRobotStatuses, 5000)); // Update all robot statuses every 5 seconds
+    
+    // Refresh date range every minute to catch day transitions in live mode
+    pollingIntervals.push(setInterval(function() {
+        if (isLiveMode) {
+            fetchRobotDateRange();
+        }
+    }, 60000)); // Every 60 seconds
 }
 
 /**
@@ -466,7 +484,8 @@ function fetchTelemetry() {
  * Fetch historical telemetry for specific date
  */
 function fetchHistoricalTelemetry(date) {
-    const params = `?date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    const tzOffset = getTimezoneOffset();
+    const params = `?date=${date}&tz_offset=${tzOffset}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
     $.getJSON('/api/telemetry_at_time' + params, function(data) {
         updateTelemetryDisplay(data);
     }).fail(function(xhr, status, error) {
@@ -600,7 +619,8 @@ function fetchPathHistory() {
  * Fetch historical path for specific date
  */
 function fetchHistoricalPath(date) {
-    const params = `?date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    const tzOffset = getTimezoneOffset();
+    const params = `?date=${date}&tz_offset=${tzOffset}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
     $.getJSON('/api/path_history' + params, function(data) {
         if (!pathCtx || !data || data.length === 0) {
             console.warn("No path data for this date");
@@ -677,7 +697,8 @@ function fetchTelemetryLogs() {
  * Fetch historical logs for specific date
  */
 function fetchHistoricalLogs(date) {
-    const params = `date=${date}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
+    const tzOffset = getTimezoneOffset();
+    const params = `date=${date}&tz_offset=${tzOffset}${currentRobotId ? '&robot_id=' + currentRobotId : ''}`;
     $.getJSON('/api/telemetry_history?' + params, function(data) {
         displayLogs(data);
     }).fail(function() {
@@ -932,7 +953,10 @@ function initHealthCharts() {
  * Fetch health history data and update charts
  */
 function fetchHealthHistory(date = null) {
-    const url = date ? `/api/health_history?date=${date}` : '/api/health_history';
+    const tzOffset = getTimezoneOffset();
+    const url = date 
+        ? `/api/health_history?date=${date}&tz_offset=${tzOffset}` 
+        : '/api/health_history';
     
     console.log("Fetching health history from:", url);
     
