@@ -4,7 +4,15 @@
 <div id="dashboard-view" class="row">
     <div class="col-lg-8">
         <div class="bg-panel hud-card">
-            <h4 class="text-neon">LIVE SPATIAL MAPPING (SLAM)</h4>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="text-neon mb-0">LIVE SPATIAL MAPPING (SLAM)</h4>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="text-muted small mb-0 me-2">VIEW DATE:</label>
+                    <input type="date" id="dateSelector" class="form-control form-control-sm form-control-cyber" style="width: 160px;">
+                    <button class="btn btn-sm btn-cyber" onclick="loadHistoricalData()">LOAD</button>
+                    <button class="btn btn-sm btn-outline-info" onclick="loadLiveData()">LIVE</button>
+                </div>
+            </div>
             <div class="map-container" id="mapZone">
                 <canvas id="pathCanvas" width="600" height="400" style="position: absolute; top: 0; left: 0;"></canvas>
                 <div id="robotMarker" class="robot-marker" style="top: 50%; left: 50%;"></div>
@@ -17,7 +25,10 @@
         </div>
         
         <div class="bg-panel hud-card">
-            <h4 class="text-neon">TELEMETRY LOGS</h4>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="text-neon mb-0">TELEMETRY LOGS</h4>
+                <small class="text-muted" id="dataMode">MODE: LIVE</small>
+            </div>
             <div class="log-terminal" id="sysLogs">
                 <div class="log-entry">[S4-CLOUD] Initializing telemetry stream...</div>
             </div>

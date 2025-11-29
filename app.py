@@ -237,29 +237,6 @@ def api_telemetry():
         "timestamp": latest_telem.timestamp.isoformat() if latest_telem.timestamp else None
     })
 
-@app.route('/api/path_history')
-@login_required
-def api_path_history():
-    """Returns recent path history for trail visualization"""
-    robot = Robot.query.first()
-    
-    if not robot:
-        return jsonify([])
-    
-    # Get last 100 path points
-    recent_paths = PathLog.query.filter_by(robot_id=robot.id)\
-        .order_by(PathLog.timestamp.desc())\
-        .limit(100)\
-        .all()
-    
-    path_data = [{
-        "x": p.pos_x,
-        "y": p.pos_y,
-        "timestamp": p.timestamp.isoformat()
-    } for p in reversed(recent_paths)]
-    
-    return jsonify(path_data)
-
 @app.route('/api/telemetry_history')
 @login_required
 def api_telemetry_history():
@@ -269,11 +246,30 @@ def api_telemetry_history():
     if not robot:
         return jsonify([])
     
-    # Get last 50 telemetry logs
-    recent_logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
-        .order_by(TelemetryLog.timestamp.desc())\
-        .limit(50)\
-        .all()
+    # Check if date parameter is provided for historical data
+    date_param = request.args.get('date')
+    
+    if date_param:
+        # Parse the date and get data for that specific day
+        try:
+            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
+            start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = start_of_day + timedelta(days=1)
+            
+            logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
+                .filter(TelemetryLog.timestamp >= start_of_day)\
+                .filter(TelemetryLog.timestamp < end_of_day)\
+                .order_by(TelemetryLog.timestamp.asc())\
+                .all()
+        except ValueError:
+            return jsonify({"error": "Invalid date format"}), 400
+    else:
+        # Get last 50 telemetry logs (live mode)
+        logs = TelemetryLog.query.filter_by(robot_id=robot.id)\
+            .order_by(TelemetryLog.timestamp.desc())\
+            .limit(50)\
+            .all()
+        logs = list(reversed(logs))
     
     log_data = [{
         "timestamp": log.timestamp.isoformat(),
@@ -282,9 +278,106 @@ def api_telemetry_history():
         "load": log.motor_load,
         "status": log.status_code,
         "cycles": log.cycle_counter
-    } for log in reversed(recent_logs)]
+    } for log in logs]
     
     return jsonify(log_data)
+
+@app.route('/api/path_history')
+@login_required
+def api_path_history():
+    """Returns path history for trail visualization"""
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify([])
+    
+    # Check if date parameter is provided for historical data
+    date_param = request.args.get('date')
+    
+    if date_param:
+        # Parse the date and get data for that specific day
+        try:
+            target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
+            start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_of_day = start_of_day + timedelta(days=1)
+            
+            # Get all path points for that day (sample every 5 minutes to avoid too much data)
+            all_paths = PathLog.query.filter_by(robot_id=robot.id)\
+                .filter(PathLog.timestamp >= start_of_day)\
+                .filter(PathLog.timestamp < end_of_day)\
+                .order_by(PathLog.timestamp.asc())\
+                .all()
+            
+            # Sample every 5th point to reduce data size while keeping shape
+            paths = [all_paths[i] for i in range(0, len(all_paths), 5)] if len(all_paths) > 200 else all_paths
+        except ValueError:
+            return jsonify({"error": "Invalid date format"}), 400
+    else:
+        # Get last 100 path points (live mode)
+        paths = PathLog.query.filter_by(robot_id=robot.id)\
+            .order_by(PathLog.timestamp.desc())\
+            .limit(100)\
+            .all()
+        paths = list(reversed(paths))
+    
+    path_data = [{
+        "x": p.pos_x,
+        "y": p.pos_y,
+        "timestamp": p.timestamp.isoformat()
+    } for p in paths]
+    
+    return jsonify(path_data)
+
+@app.route('/api/telemetry_at_time')
+@login_required
+def api_telemetry_at_time():
+    """Returns telemetry data for a specific date/time"""
+    robot = Robot.query.first()
+    
+    if not robot:
+        return jsonify({"error": "No robot found"}), 404
+    
+    date_param = request.args.get('date')
+    
+    if not date_param:
+        # Return latest if no date specified
+        return api_telemetry()
+    
+    try:
+        target_date = datetime.fromisoformat(date_param).replace(tzinfo=timezone.utc)
+        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = start_of_day + timedelta(days=1)
+        
+        # Get the last telemetry entry for that day
+        latest_telem = TelemetryLog.query.filter_by(robot_id=robot.id)\
+            .filter(TelemetryLog.timestamp >= start_of_day)\
+            .filter(TelemetryLog.timestamp < end_of_day)\
+            .order_by(TelemetryLog.timestamp.desc())\
+            .first()
+        
+        # Get the last position for that day
+        latest_path = PathLog.query.filter_by(robot_id=robot.id)\
+            .filter(PathLog.timestamp >= start_of_day)\
+            .filter(PathLog.timestamp < end_of_day)\
+            .order_by(PathLog.timestamp.desc())\
+            .first()
+        
+        if not latest_telem:
+            return jsonify({"error": "No data found for this date"}), 404
+        
+        return jsonify({
+            "battery": latest_telem.battery_voltage or 0,
+            "cpu_temp": latest_telem.cpu_temp or 0,
+            "load": latest_telem.motor_load or 0,
+            "status": latest_telem.status_code or "UNKNOWN",
+            "pos_x": latest_path.pos_x if latest_path else 50,
+            "pos_y": latest_path.pos_y if latest_path else 50,
+            "orientation": latest_path.orientation if latest_path else 0,
+            "cycles": latest_telem.cycle_counter or 0,
+            "timestamp": latest_telem.timestamp.isoformat() if latest_telem.timestamp else None
+        })
+    except ValueError:
+        return jsonify({"error": "Invalid date format"}), 400
 
 @app.route('/api/command', methods=['POST'])
 @login_required
