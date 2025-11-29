@@ -37,23 +37,70 @@ function getTimezoneOffset() {
 }
 
 /**
- * Define obstacle boundaries (x, y, width, height in %)
+ * Obstacle array - will be loaded from database
  * These represent physical objects the robot must avoid
  */
-const obstacles = [
-    // Walls (5% thick)
-    { x: 0, y: 0, width: 100, height: 5, name: 'North Wall' },
-    { x: 0, y: 95, width: 100, height: 5, name: 'South Wall' },
-    { x: 0, y: 0, width: 5, height: 100, name: 'West Wall' },
-    { x: 95, y: 0, width: 5, height: 100, name: 'East Wall' },
+let obstacles = [];
+
+/**
+ * Load obstacles for the current robot from database
+ */
+function fetchObstacles() {
+    const params = currentRobotId ? `?robot_id=${currentRobotId}` : '';
+    $.getJSON('/api/obstacles' + params, function(data) {
+        obstacles = data;
+        console.log(`Loaded ${obstacles.length} obstacles for robot`);
+        renderObstacles();
+    }).fail(function(xhr, status, error) {
+        console.warn("Failed to load obstacles:", error);
+        obstacles = [];
+    });
+}
+
+/**
+ * Render obstacles on the map
+ */
+function renderObstacles() {
+    const container = $('#obstaclesContainer');
+    container.empty(); // Clear existing obstacles
     
-    // Furniture
-    { x: 15, y: 35, width: 25, height: 30, name: 'Conference Table' },
-    { x: 70, y: 10, width: 20, height: 15, name: 'Desk' },
-    { x: 75, y: 27, width: 8, height: 8, name: 'Chair' },
-    { x: 70, y: 75, width: 20, height: 18, name: 'Storage Cabinet' },
-    { x: 55, y: 48, width: 8, height: 8, name: 'Pillar' }
-];
+    obstacles.forEach(function(obstacle) {
+        let element;
+        
+        if (obstacle.type === 'circle') {
+            // Create circular obstacle
+            const diameter = obstacle.radius * 2;
+            element = $('<div>')
+                .addClass('obstacle-circle')
+                .css({
+                    top: (obstacle.y - obstacle.radius) + '%',
+                    left: (obstacle.x - obstacle.radius) + '%',
+                    width: diameter + '%',
+                    height: diameter + '%',
+                    background: obstacle.color || 'rgba(100,100,100,0.4)'
+                })
+                .attr('title', obstacle.name)
+                .attr('data-obstacle-id', obstacle.id);
+        } else if (obstacle.type === 'rectangle') {
+            // Create rectangular obstacle
+            element = $('<div>')
+                .addClass('obstacle')
+                .css({
+                    top: obstacle.y + '%',
+                    left: obstacle.x + '%',
+                    width: obstacle.width + '%',
+                    height: obstacle.height + '%',
+                    background: obstacle.color || 'rgba(100,100,100,0.4)'
+                })
+                .attr('title', obstacle.name)
+                .attr('data-obstacle-id', obstacle.id);
+        }
+        
+        if (element) {
+            container.append(element);
+        }
+    });
+}
 
 /**
  * Check if a position collides with any obstacle
@@ -64,11 +111,21 @@ const obstacles = [
  */
 function checkCollision(x, y, buffer = 2) {
     for (const obstacle of obstacles) {
-        if (x >= (obstacle.x - buffer) && 
-            x <= (obstacle.x + obstacle.width + buffer) &&
-            y >= (obstacle.y - buffer) && 
-            y <= (obstacle.y + obstacle.height + buffer)) {
-            return true;
+        if (obstacle.type === 'rectangle') {
+            if (x >= (obstacle.x - buffer) && 
+                x <= (obstacle.x + obstacle.width + buffer) &&
+                y >= (obstacle.y - buffer) && 
+                y <= (obstacle.y + obstacle.height + buffer)) {
+                return true;
+            }
+        } else if (obstacle.type === 'circle') {
+            // Check distance from circle center
+            const dx = x - obstacle.x;
+            const dy = y - obstacle.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance <= obstacle.radius + buffer) {
+                return true;
+            }
         }
     }
     return false;
@@ -208,6 +265,9 @@ function loadRobots() {
             // Select first robot by default
             currentRobotId = robots[0].id;
             selector.val(currentRobotId);
+            
+            // Load obstacles for the default robot
+            fetchObstacles();
         })
         .fail(function(error) {
             console.error("Failed to load robots:", error);
@@ -236,6 +296,9 @@ window.switchRobot = function() {
         // Update button states
         $('#btnLiveMode').addClass('active');
         $('#btnLoadHistorical').removeClass('active');
+        
+        // Fetch obstacles for this robot
+        fetchObstacles();
         
         // Fetch date range for this robot
         fetchRobotDateRange();

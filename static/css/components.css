@@ -100,6 +100,16 @@
     pointer-events: none; /* Don't interfere with canvas interactions */
 }
 
+.obstacle-circle {
+    position: absolute;
+    background: rgba(100, 100, 100, 0.4);
+    border: 1px solid rgba(150, 150, 150, 0.6);
+    border-radius: 50%; /* Make it circular */
+    z-index: 5;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+    pointer-events: none;
+}
+
 .obstacle-small {
     background: rgba(120, 120, 120, 0.5);
     border-radius: 8px;

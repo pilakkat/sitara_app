@@ -67,6 +67,32 @@ class PathLog(db.Model):
     pos_y = db.Column(db.Float)
     orientation = db.Column(db.Float)       # Heading in degrees (0-360)
 
+# --- 4. Obstacles/Boundaries (Robot-specific workspace) ---
+class Obstacle(db.Model):
+    __tablename__ = 'obstacles'
+    id = db.Column(db.Integer, primary_key=True)
+    robot_id = db.Column(db.Integer, db.ForeignKey('robots.id'), nullable=False)
+    
+    # Obstacle definition
+    name = db.Column(db.String(50), nullable=False)  # e.g., "North Wall", "Conference Table"
+    obstacle_type = db.Column(db.String(20), default="rectangle")  # "rectangle", "circle", "polygon"
+    
+    # Position and size (percentage-based: 0-100)
+    x = db.Column(db.Float, nullable=False)
+    y = db.Column(db.Float, nullable=False)
+    width = db.Column(db.Float)   # For rectangles
+    height = db.Column(db.Float)  # For rectangles
+    radius = db.Column(db.Float)  # For circles
+    
+    # SVG path for complex shapes (optional)
+    svg_path = db.Column(db.Text)  # SVG path data for irregular shapes
+    
+    # Visual styling
+    color = db.Column(db.String(20), default="rgba(100,100,100,0.4)")
+    
+    # Relationships
+    robot = db.relationship('Robot', backref=db.backref('obstacles', lazy='dynamic'))
+
 
 # --- Data from S1/S2 Streams) ---
 @app.route('/api/telemetry', methods=['POST'])
@@ -446,6 +472,42 @@ def api_path_history():
     } for p in paths]
     
     return jsonify(path_data)
+
+@app.route('/api/obstacles')
+@login_required
+def api_obstacles():
+    """Returns obstacles for a specific robot's workspace"""
+    robot_id = request.args.get('robot_id', type=int)
+    
+    if robot_id:
+        if not user_can_access_robot(robot_id):
+            return jsonify({"error": "Access denied"}), 403
+        robot = Robot.query.get(robot_id)
+    else:
+        accessible_ids = get_user_accessible_robots()
+        if not accessible_ids:
+            return jsonify({"error": "No accessible robots"}), 403
+        robot = Robot.query.get(accessible_ids[0])
+    
+    if not robot:
+        return jsonify({"error": "Robot not found"}), 404
+    
+    obstacles = Obstacle.query.filter_by(robot_id=robot.id).all()
+    
+    obstacle_data = [{
+        "id": obs.id,
+        "name": obs.name,
+        "type": obs.obstacle_type,
+        "x": obs.x,
+        "y": obs.y,
+        "width": obs.width,
+        "height": obs.height,
+        "radius": obs.radius,
+        "svg_path": obs.svg_path,
+        "color": obs.color
+    } for obs in obstacles]
+    
+    return jsonify(obstacle_data)
 
 @app.route('/api/robot/date_range')
 @login_required

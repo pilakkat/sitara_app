@@ -1,46 +1,97 @@
-from app import app, db, Robot, TelemetryLog, PathLog, User
+from app import app, db, Robot, TelemetryLog, PathLog, User, Obstacle
 import random
 import math
 
 from datetime import datetime, timedelta, timezone
 
-# --- OBSTACLE DEFINITIONS ---
-OBSTACLES = [
-    # Walls (5% thick)
-    {'x': 0, 'y': 0, 'width': 100, 'height': 5, 'name': 'North Wall'},
-    {'x': 0, 'y': 95, 'width': 100, 'height': 5, 'name': 'South Wall'},
-    {'x': 0, 'y': 0, 'width': 5, 'height': 100, 'name': 'West Wall'},
-    {'x': 95, 'y': 0, 'width': 5, 'height': 100, 'name': 'East Wall'},
-    
-    # Furniture
-    {'x': 15, 'y': 35, 'width': 25, 'height': 30, 'name': 'Conference Table'},
-    {'x': 70, 'y': 10, 'width': 20, 'height': 15, 'name': 'Desk'},
-    {'x': 75, 'y': 27, 'width': 8, 'height': 8, 'name': 'Chair'},
-    {'x': 70, 'y': 75, 'width': 20, 'height': 18, 'name': 'Storage Cabinet'},
-    {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
-]
+# --- OBSTACLE DEFINITIONS (Templates for each workspace) ---
+# Different robots can have different workspaces
+WORKSPACE_OBSTACLES = {
+    'office_floor_1': [
+        # Walls (5% thick)
+        {'name': 'North Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'South Wall', 'type': 'rectangle', 'x': 0, 'y': 95, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'West Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'East Wall', 'type': 'rectangle', 'x': 95, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        
+        # Furniture
+        {'name': 'Conference Table', 'type': 'rectangle', 'x': 15, 'y': 35, 'width': 25, 'height': 30, 'color': 'rgba(139,90,43,0.5)'},
+        {'name': 'Desk', 'type': 'rectangle', 'x': 70, 'y': 10, 'width': 20, 'height': 15, 'color': 'rgba(120,80,50,0.5)'},
+        {'name': 'Chair', 'type': 'circle', 'x': 79, 'y': 31, 'radius': 4, 'color': 'rgba(100,100,100,0.4)'},
+        {'name': 'Storage Cabinet', 'type': 'rectangle', 'x': 70, 'y': 75, 'width': 20, 'height': 18, 'color': 'rgba(90,90,90,0.5)'},
+        {'name': 'Pillar', 'type': 'circle', 'x': 59, 'y': 52, 'radius': 4, 'color': 'rgba(150,150,150,0.6)'}
+    ],
+    'warehouse_zone_a': [
+        # Walls
+        {'name': 'North Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'South Wall', 'type': 'rectangle', 'x': 0, 'y': 95, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'West Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'East Wall', 'type': 'rectangle', 'x': 95, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        
+        # Warehouse obstacles
+        {'name': 'Rack 1', 'type': 'rectangle', 'x': 10, 'y': 20, 'width': 15, 'height': 40, 'color': 'rgba(180,120,60,0.5)'},
+        {'name': 'Rack 2', 'type': 'rectangle', 'x': 35, 'y': 20, 'width': 15, 'height': 40, 'color': 'rgba(180,120,60,0.5)'},
+        {'name': 'Rack 3', 'type': 'rectangle', 'x': 60, 'y': 20, 'width': 15, 'height': 40, 'color': 'rgba(180,120,60,0.5)'},
+        {'name': 'Loading Dock', 'type': 'rectangle', 'x': 35, 'y': 70, 'width': 30, 'height': 20, 'color': 'rgba(100,150,200,0.4)'}
+    ],
+    'lab_environment': [
+        # Walls
+        {'name': 'North Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'South Wall', 'type': 'rectangle', 'x': 0, 'y': 95, 'width': 100, 'height': 5, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'West Wall', 'type': 'rectangle', 'x': 0, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        {'name': 'East Wall', 'type': 'rectangle', 'x': 95, 'y': 0, 'width': 5, 'height': 100, 'color': 'rgba(80,80,80,0.5)'},
+        
+        # Lab equipment
+        {'name': 'Lab Bench 1', 'type': 'rectangle', 'x': 10, 'y': 10, 'width': 35, 'height': 12, 'color': 'rgba(200,200,200,0.5)'},
+        {'name': 'Lab Bench 2', 'type': 'rectangle', 'x': 10, 'y': 30, 'width': 35, 'height': 12, 'color': 'rgba(200,200,200,0.5)'},
+        {'name': 'Equipment Cabinet', 'type': 'rectangle', 'x': 55, 'y': 10, 'width': 30, 'height': 20, 'color': 'rgba(150,150,150,0.5)'},
+        {'name': 'Safety Zone', 'type': 'rectangle', 'x': 60, 'y': 70, 'width': 25, 'height': 20, 'color': 'rgba(255,200,0,0.3)'}
+    ]
+}
 
-def check_collision(x, y, buffer=2):
+# Map robot serials to their workspace environments
+ROBOT_WORKSPACES = {
+    'SITARA32DOFH0001': 'office_floor_1',
+    'SITARA32DOFH0002': 'warehouse_zone_a',
+    'SITARA32DOFH0003': 'lab_environment'
+}
+
+def get_obstacles_for_workspace(workspace_name):
+    """Get obstacle definitions for a specific workspace"""
+    return WORKSPACE_OBSTACLES.get(workspace_name, WORKSPACE_OBSTACLES['office_floor_1'])
+
+def check_collision(x, y, obstacles, buffer=2):
     """Check if position collides with any obstacle"""
-    for obstacle in OBSTACLES:
-        if (x >= (obstacle['x'] - buffer) and 
-            x <= (obstacle['x'] + obstacle['width'] + buffer) and
-            y >= (obstacle['y'] - buffer) and 
-            y <= (obstacle['y'] + obstacle['height'] + buffer)):
-            return True
+    for obstacle in obstacles:
+        obs_type = obstacle.get('type', 'rectangle')
+        
+        if obs_type == 'rectangle':
+            if (x >= (obstacle['x'] - buffer) and 
+                x <= (obstacle['x'] + obstacle['width'] + buffer) and
+                y >= (obstacle['y'] - buffer) and 
+                y <= (obstacle['y'] + obstacle['height'] + buffer)):
+                return True
+        elif obs_type == 'circle':
+            # Check distance from circle center
+            center_x = obstacle['x']
+            center_y = obstacle['y']
+            radius = obstacle['radius'] + buffer
+            dist = math.sqrt((x - center_x)**2 + (y - center_y)**2)
+            if dist <= radius:
+                return True
     return False
 
-def is_valid_position(x, y):
+def is_valid_position(x, y, obstacles):
     """Check if position is valid (within bounds and no collision)"""
     # Keep robot within safe area (away from edges)
     if x < 5 or x > 95 or y < 5 or y > 95:
         return False
     # Check obstacle collision
-    return not check_collision(x, y)
+    return not check_collision(x, y, obstacles)
 
-def find_valid_position_near(x, y, max_attempts=20):
+def find_valid_position_near(x, y, obstacles, max_attempts=20):
     """Find a valid position near the target coordinates"""
-    if is_valid_position(x, y):
+    if is_valid_position(x, y, obstacles):
         return x, y
     
     # Try positions in expanding radius
@@ -50,7 +101,7 @@ def find_valid_position_near(x, y, max_attempts=20):
             test_x = x + radius * math.cos(rad)
             test_y = y + radius * math.sin(rad)
             
-            if is_valid_position(test_x, test_y):
+            if is_valid_position(test_x, test_y, obstacles):
                 return test_x, test_y
     
     # Fallback to center
@@ -117,7 +168,30 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         print("Clearing old data...")
         TelemetryLog.query.filter_by(robot_id=robot.id).delete()
         PathLog.query.filter_by(robot_id=robot.id).delete()
+        Obstacle.query.filter_by(robot_id=robot.id).delete()
         db.session.commit()
+        
+        # 3. Create obstacles for this robot's workspace
+        workspace_name = ROBOT_WORKSPACES.get(robot_serial, 'office_floor_1')
+        obstacle_templates = get_obstacles_for_workspace(workspace_name)
+        
+        print(f"Creating {len(obstacle_templates)} obstacles for workspace: {workspace_name}")
+        for obs_template in obstacle_templates:
+            obstacle = Obstacle(
+                robot_id=robot.id,
+                name=obs_template['name'],
+                obstacle_type=obs_template['type'],
+                x=obs_template['x'],
+                y=obs_template['y'],
+                width=obs_template.get('width'),
+                height=obs_template.get('height'),
+                radius=obs_template.get('radius'),
+                color=obs_template.get('color', 'rgba(100,100,100,0.4)')
+            )
+            db.session.add(obstacle)
+        
+        db.session.commit()
+        print(f"✓ Obstacles created for {robot_serial}")
 
         end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(days=days_to_generate)
@@ -127,7 +201,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         
         # Simulated values
         current_battery = 24.8
-        cycle_count = 12000  # Starting cycle count (robot's lifetime power-on cycles)
+        cycle_count = 2700  # Starting cycle count (robot's lifetime power-on cycles)
         
         # Track last logged telemetry values for change detection
         last_logged_battery = current_battery
@@ -139,7 +213,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
         # Track last position for smooth movement
         # Start at a valid position (avoid obstacles)
         last_pos_x = 30.0  # Start in open area (left side)
-        last_pos_y = 20.0
+        last_pos_y = 90.0
         last_orientation = 0.0
         
         # Movement state
@@ -279,8 +353,8 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                     target_y = 20 + (15 * math.cos(t)) + (10 * math.sin(t * 2.5))
                 
                 # Validate target position and find alternative if needed
-                if not is_valid_position(target_x, target_y):
-                    target_x, target_y = find_valid_position_near(target_x, target_y)
+                if not is_valid_position(target_x, target_y, obstacle_templates):
+                    target_x, target_y = find_valid_position_near(target_x, target_y, obstacle_templates)
                 
                 # Smooth interpolation to avoid teleportation (max speed limit)
                 max_speed = 2.0  # Maximum units per minute
@@ -298,7 +372,7 @@ def generate_synthetic_data_for_robot(robot_serial, operator_username, days_to_g
                     pos_y = target_y
                 
                 # Validate final position before committing
-                if not is_valid_position(pos_x, pos_y):
+                if not is_valid_position(pos_x, pos_y, obstacle_templates):
                     # If collision, stay at last position
                     pos_x = last_pos_x
                     pos_y = last_pos_y
