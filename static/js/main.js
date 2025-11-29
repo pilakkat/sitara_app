@@ -1156,10 +1156,25 @@ function updateTimelineData(pathData) {
         $('#timelineDataPoints').text(timelineData.length + ' data points');
     }
     
-    // Auto-update to latest position if enabled
+    // Auto-update timeline position to latest point if enabled
+    // But DON'T update robot marker - that should come from fetchTelemetry() in live mode
     if (timelineAutoUpdate && isLiveMode) {
         currentTimelineIndex = timelineData.length - 1;
         const percent = (currentTimelineIndex / (timelineData.length - 1)) * 100;
-        updateTimelinePosition(percent);
+        
+        // Update timeline UI position only, not robot marker
+        const handle = document.getElementById('timelineHandle');
+        const progress = document.getElementById('timelineProgress');
+        
+        if (handle && progress) {
+            handle.style.left = percent + '%';
+            progress.style.width = percent + '%';
+        }
+        
+        // Update current time display
+        if (timelineData.length > 0) {
+            const timestamp = new Date(timelineData[timelineData.length - 1].timestamp);
+            $('#timelineCurrent').text(timestamp.toLocaleTimeString());
+        }
     }
 }
