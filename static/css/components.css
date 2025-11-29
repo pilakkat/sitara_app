@@ -171,6 +171,57 @@
     opacity: 0.5;
 }
 
+/* Mode Toggle Buttons (LOAD/LIVE) */
+.btn-mode-toggle {
+    background: transparent;
+    border: 1px solid var(--neon-blue);
+    color: var(--neon-blue);
+    font-family: var(--font-head);
+    transition: all 0.3s ease;
+    position: relative;
+    padding-left: 28px;
+}
+
+.btn-mode-toggle:hover {
+    background: rgba(0, 243, 255, 0.15);
+    border-color: var(--neon-blue);
+    color: var(--neon-blue);
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.5);
+}
+
+.btn-mode-toggle .mode-indicator {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 8px;
+    height: 8px;
+    background: rgba(100, 100, 100, 0.5);
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.btn-mode-toggle.active {
+    background: rgba(0, 243, 255, 0.1);
+    border-color: var(--neon-blue);
+    color: var(--neon-blue);
+}
+
+.btn-mode-toggle.active .mode-indicator {
+    background: #00ff88;
+    box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0, 255, 136, 0.6), 0 0 30px rgba(0, 255, 136, 0.3);
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+    0%, 100% {
+        box-shadow: 0 0 10px #00ff88, 0 0 20px rgba(0, 255, 136, 0.6), 0 0 30px rgba(0, 255, 136, 0.3);
+    }
+    50% {
+        box-shadow: 0 0 15px #00ff88, 0 0 30px rgba(0, 255, 136, 0.8), 0 0 45px rgba(0, 255, 136, 0.5);
+    }
+}
+
 /* Scroll Animation */
 .reveal {
     opacity: 0;

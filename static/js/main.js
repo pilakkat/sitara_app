@@ -75,8 +75,15 @@ window.switchRobot = function() {
         $('#dateSelector').val('');
         $('#dataMode').text('MODE: LIVE');
         
+        // Update button states
+        $('#btnLiveMode').addClass('active');
+        $('#btnLoadHistorical').removeClass('active');
+        
         // Fetch date range for this robot
         fetchRobotDateRange();
+        
+        // Update navigation button states
+        updateDateNavigationButtons();
         
         // Stop any existing polling and start fresh
         stopPolling();
@@ -158,8 +165,13 @@ window.loadHistoricalData = function() {
     // Stop live polling
     stopPolling();
     
-    // Update UI
+    // Update UI and button states
     $('#dataMode').text('MODE: HISTORICAL - ' + selectedDate);
+    $('#btnLoadHistorical').addClass('active');
+    $('#btnLiveMode').removeClass('active');
+    
+    // Update navigation button states
+    updateDateNavigationButtons();
     
     // Load historical data
     fetchHistoricalTelemetry(selectedDate);
@@ -177,6 +189,13 @@ window.loadLiveData = function() {
     // Clear date selector
     $('#dateSelector').val('');
     $('#dataMode').text('MODE: LIVE');
+    
+    // Update button states
+    $('#btnLiveMode').addClass('active');
+    $('#btnLoadHistorical').removeClass('active');
+    
+    // Update navigation button states
+    updateDateNavigationButtons();
     
     // Clear existing path history to force full reload
     pathHistory = [];
