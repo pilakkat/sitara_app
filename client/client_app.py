@@ -1147,5 +1147,58 @@ def main():
     robot_client.start()
 
 
+# ============================================================================
+# AUTO-INITIALIZATION FOR WSGI/GUNICORN
+# ============================================================================
+
+def _auto_initialize_for_wsgi():
+    """Auto-initialize robot client for WSGI servers like gunicorn"""
+    global robot_client
+    
+    # Only initialize if we have valid credentials
+    if USERNAME and PASSWORD and USERNAME != 'MISSING_USERNAME' and PASSWORD != 'MISSING_PASSWORD':
+        if not USERNAME.startswith('<') and not USERNAME.startswith('your-'):
+            try:
+                print(f"[WSGI] Auto-initializing robot client...")
+                robot_client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
+                
+                # Authenticate first (blocking to ensure it's ready)
+                if robot_client.login():
+                    print(f"[WSGI] ✓ Robot client authenticated")
+                    robot_client.fetch_last_position()
+                else:
+                    print(f"[WSGI] ✗ Robot client authentication failed")
+                    return
+                
+                # Start the robot client threads
+                robot_client.running = True
+                
+                # Start telemetry thread
+                telemetry_thread = Thread(target=robot_client.run_telemetry_loop, daemon=True)
+                telemetry_thread.start()
+                
+                # Start command listener thread  
+                command_thread = Thread(target=robot_client.run_command_loop, daemon=True)
+                command_thread.start()
+                
+                print(f"[WSGI] ✓ Robot client fully initialized and running")
+                
+            except Exception as e:
+                print(f"[WSGI] ✗ Failed to auto-initialize robot client: {e}")
+                import traceback
+                traceback.print_exc()
+                robot_client = None
+        else:
+            print(f"[WSGI] Skipping auto-initialization: credentials appear to be placeholders")
+    else:
+        print(f"[WSGI] Skipping auto-initialization: missing or invalid credentials")
+
+# Trigger auto-initialization when imported by gunicorn
+# This is skipped when running as __main__ because main() handles it
+if __name__ != "__main__":
+    print(f"[INIT] Module imported (not running as __main__), triggering auto-initialization...")
+    _auto_initialize_for_wsgi()
+
+
 if __name__ == "__main__":
     main()
