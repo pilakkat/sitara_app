@@ -97,32 +97,33 @@ OBSTACLES = [
     {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
 ]
 
-def check_collision(x, y, buffer=COLLISION_BUFFER):
+def check_collision(x, y, obstacles, buffer=COLLISION_BUFFER):
     """Check if position collides with any obstacle"""
-    for obstacle in OBSTACLES:
+    for obstacle in obstacles:
         if (x >= (obstacle['x'] - buffer) and 
             x <= (obstacle['x'] + obstacle['width'] + buffer) and
             y >= (obstacle['y'] - buffer) and 
             y <= (obstacle['y'] + obstacle['height'] + buffer)):
+            print(f"[COLLISION-DEBUG] Position ({x:.1f}, {y:.1f}) collides with {obstacle['name']}")
             return True
     return False
 
-def is_valid_position(x, y):
+def is_valid_position(x, y, obstacles):
     """Check if position is valid (within bounds and no collision)"""
     # Keep robot within safe area (away from edges)
     if x < MAP_SAFE_MIN or x > MAP_SAFE_MAX or y < MAP_SAFE_MIN or y > MAP_SAFE_MAX:
         return False
     # Check obstacle collision
-    return not check_collision(x, y)
+    return not check_collision(x, y, obstacles)
 
-def find_nearest_safe_position(x, y):
+def find_nearest_safe_position(x, y, obstacles):
     """Find the nearest safe position to the given coordinates
     
     This is used when the robot is initialized inside an obstacle (e.g., demo system).
     Searches outward in a spiral pattern to find the nearest valid position.
     """
     # If already valid, return as-is
-    if is_valid_position(x, y):
+    if is_valid_position(x, y, obstacles):
         return x, y
     
     print(f"[COLLISION] Position ({x:.1f}, {y:.1f}) is inside obstacle, finding safe position...")
@@ -138,7 +139,7 @@ def find_nearest_safe_position(x, y):
             test_x = x + radius * math.cos(rad)
             test_y = y + radius * math.sin(rad)
             
-            if is_valid_position(test_x, test_y):
+            if is_valid_position(test_x, test_y, obstacles):
                 print(f"[COLLISION] Found safe position at ({test_x:.1f}, {test_y:.1f}), distance: {radius:.1f}")
                 return test_x, test_y
     
@@ -248,6 +249,9 @@ class RobotClient:
         
         # Initialize database
         self.db = ClientDatabase()
+        
+        # Robot-specific obstacles (fetched from server)
+        self.obstacles = []
         
         # Robot state
         self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
@@ -477,6 +481,35 @@ class RobotClient:
         
         return False
     
+    def fetch_obstacles(self):
+        """Fetch robot-specific obstacles from server"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/obstacles",
+                params={'robot_id': self.robot_id},
+                timeout=NETWORK_TIMEOUT_DEFAULT
+            )
+            
+            if response.status_code == 200:
+                obstacles_data = response.json()
+                self.obstacles = obstacles_data
+                print(f"[ROBOT-{self.robot_id}] ✓ Loaded {len(self.obstacles)} obstacles from server")
+                for obs in self.obstacles:
+                    print(f"[ROBOT-{self.robot_id}]   - {obs['name']}: ({obs['x']}, {obs['y']}) {obs['width']}x{obs['height']}")
+                return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Failed to fetch obstacles: HTTP {response.status_code}")
+                # Fall back to global OBSTACLES if server fetch fails
+                self.obstacles = OBSTACLES
+                print(f"[ROBOT-{self.robot_id}] ⚠ Using default global obstacles as fallback")
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Error fetching obstacles: {e}")
+            # Fall back to global OBSTACLES
+            self.obstacles = OBSTACLES
+            print(f"[ROBOT-{self.robot_id}] ⚠ Using default global obstacles as fallback")
+            return False
+    
     def fetch_last_position(self):
         """Fetch the last known position from the server"""
         try:
@@ -495,8 +528,8 @@ class RobotClient:
                     print(f"[ROBOT-{self.robot_id}] ✓ Restored last position: ({self.position['x']:.1f}, {self.position['y']:.1f}), orientation: {self.position['orientation']:.1f}°")
                     
                     # Safety check: If position is inside an obstacle, move to nearest safe position
-                    if not is_valid_position(self.position['x'], self.position['y']):
-                        safe_x, safe_y = find_nearest_safe_position(self.position['x'], self.position['y'])
+                    if not is_valid_position(self.position['x'], self.position['y'], self.obstacles):
+                        safe_x, safe_y = find_nearest_safe_position(self.position['x'], self.position['y'], self.obstacles)
                         self.position['x'] = safe_x
                         self.position['y'] = safe_y
                         print(f"[ROBOT-{self.robot_id}] ⚠ Corrected to safe position: ({safe_x:.1f}, {safe_y:.1f})")
@@ -651,26 +684,38 @@ class RobotClient:
         cmd_type = command.get('command', '').lower()
         print(f"[ROBOT-{self.robot_id}] ← Received command: {cmd_type}")
         
-        if cmd_type == 'move_forward':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_forward'
-        elif cmd_type == 'move_up':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_up'
-        elif cmd_type == 'move_down':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_down'
-        elif cmd_type == 'move_left':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_left'
-        elif cmd_type == 'move_right':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_right'
+        # For movement commands, validate destination before accepting
+        if cmd_type in ['move_forward', 'move_up', 'move_down', 'move_left', 'move_right']:
+            # Calculate where this command would move us
+            test_x = self.position['x']
+            test_y = self.position['y']
+            
+            if cmd_type == 'move_up':
+                test_y -= self.speed
+            elif cmd_type == 'move_down':
+                test_y += self.speed
+            elif cmd_type == 'move_left':
+                test_x -= self.speed
+            elif cmd_type == 'move_right':
+                test_x += self.speed
+            elif cmd_type == 'move_forward':
+                rad = math.radians(self.position['orientation'])
+                test_x += self.speed * math.cos(rad)
+                test_y += self.speed * math.sin(rad)
+            
+            print(f"[ROBOT-{self.robot_id}] Testing move from ({self.position['x']:.1f}, {self.position['y']:.1f}) to ({test_x:.1f}, {test_y:.1f})")
+            
+            # Validate the destination
+            if is_valid_position(test_x, test_y, self.obstacles):
+                print(f"[ROBOT-{self.robot_id}] ✓ Position valid, accepting command")
+                self.status = STATUS_MOVING
+                self.motor_load = MOTOR_LOAD_MOVING
+                self.current_command = cmd_type
+            else:
+                print(f"[ROBOT-{self.robot_id}] ✗ Command rejected: Would collide at ({test_x:.1f}, {test_y:.1f})")
+                # Reject the command - stay in current state
+                return
+        
         elif cmd_type == 'stop' or cmd_type == 'halt':
             self.status = STATUS_STANDBY
             self.motor_load = MOTOR_LOAD_STANDBY
@@ -713,12 +758,19 @@ class RobotClient:
                 self.position['orientation'] = self.position['orientation'] % 360
             
             # Validate new position against obstacles
-            if is_valid_position(new_x, new_y):
+            if is_valid_position(new_x, new_y, self.obstacles):
                 self.position['x'] = new_x
                 self.position['y'] = new_y
             else:
                 # Stop if collision detected
                 print(f"[ROBOT-{self.robot_id}] Collision detected at ({new_x:.1f}, {new_y:.1f}), stopping")
+                self.status = STATUS_STANDBY
+                self.motor_load = MOTOR_LOAD_STANDBY
+                self.current_command = None
+            
+            # Clear command after single execution to prevent continuous movement
+            # Commands from server are one-time actions, not continuous states
+            if self.current_command:
                 self.status = STATUS_STANDBY
                 self.motor_load = MOTOR_LOAD_STANDBY
                 self.current_command = None
@@ -826,6 +878,10 @@ class RobotClient:
         
         # Only fetch position and check updates if authenticated
         if self.authenticated:
+            # Fetch robot-specific obstacles from server
+            print(f"[ROBOT-{self.robot_id}] Fetching robot-specific obstacles...")
+            self.fetch_obstacles()
+            
             # Fetch last known position from server
             print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
             self.fetch_last_position()
@@ -833,6 +889,10 @@ class RobotClient:
             # Check for software updates during boot sequence
             print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
             self.check_software_updates()
+        else:
+            # If not authenticated, use fallback global obstacles
+            self.obstacles = OBSTACLES
+            print(f"[ROBOT-{self.robot_id}] ⚠ Not authenticated, using default global obstacles")
         
         # Start telemetry thread (will only send if authenticated)
         telemetry_thread = Thread(target=self.run_telemetry_loop, daemon=True)
@@ -893,7 +953,8 @@ def auth_retry():
     success = robot_client.retry_authentication(new_password)
     
     if success:
-        # Fetch position and check updates after successful authentication
+        # Fetch obstacles, position, and check updates after successful authentication
+        robot_client.fetch_obstacles()
         robot_client.fetch_last_position()
         robot_client.check_software_updates()
         return jsonify({
@@ -953,7 +1014,7 @@ def control_move():
         new_y = 50.0
     
     # Validate new position against obstacles before updating
-    if is_valid_position(new_x, new_y):
+    if is_valid_position(new_x, new_y, robot_client.obstacles):
         robot_client.position['x'] = new_x
         robot_client.position['y'] = new_y
         return jsonify({'success': True})
