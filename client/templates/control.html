@@ -9,7 +9,23 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/control.css') }}">
 </head>
 <body>
-    <div class="container">
+    <!-- Authentication Modal -->
+    <div class="auth-modal" id="authModal">
+        <div class="auth-content">
+            <h2>🔐 Authentication Required</h2>
+            <p>Authentication failed. Please enter the correct password to continue.</p>
+            <form id="authForm" onsubmit="retryAuth(event)">
+                <div class="form-group">
+                    <label for="passwordInput">Password:</label>
+                    <input type="password" id="passwordInput" class="auth-input" required autocomplete="current-password">
+                </div>
+                <div class="auth-error" id="authError"></div>
+                <button type="submit" class="btn btn-auth" id="authSubmitBtn">Authenticate</button>
+            </form>
+        </div>
+    </div>
+    
+    <div class="container" id="mainContent">
         <h1>🤖 SITARA ROBOT CONTROL</h1>
         <div class="robot-id">Robot ID: <span id="robotId">Loading...</span></div>
         

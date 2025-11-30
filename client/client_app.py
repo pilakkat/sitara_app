@@ -207,6 +207,9 @@ class RobotClient:
         self.speed = MOVEMENT_SPEED
         self.current_command = None
         
+        # Authentication state
+        self.authenticated = False
+        
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
     
     def login(self):
@@ -228,20 +231,30 @@ class RobotClient:
                 redirect_location = response.headers.get('Location', '')
                 if 'dashboard' in redirect_location or redirect_location.endswith('/dashboard'):
                     print(f"[ROBOT-{self.robot_id}] ✓ Authenticated as {self.username}")
+                    self.authenticated = True
                     return True
                 else:
                     print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Unexpected redirect to {redirect_location}")
+                    self.authenticated = False
                     return False
             elif response.status_code == 200:
                 # Status 200 means we got the login page back = authentication failed
                 print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Invalid credentials")
+                self.authenticated = False
                 return False
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: HTTP {response.status_code}")
+                self.authenticated = False
                 return False
         except Exception as e:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
+            self.authenticated = False
             return False
+    
+    def retry_authentication(self, new_password):
+        """Retry authentication with a new password"""
+        self.password = new_password
+        return self.login()
     
     def check_software_updates(self):
         """Check for software updates from server"""
@@ -602,6 +615,14 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] Starting telemetry loop...")
         
         while self.running and not self.stop_event.is_set():
+            # Only send telemetry if authenticated
+            if self.authenticated:
+                self.update_robot_state()
+                self.send_telemetry()
+            else:
+                # If not authenticated, just wait
+                time.sleep(TELEMETRY_INTERVAL)
+                continue
             self.update_robot_state()
             self.send_telemetry()
             
@@ -617,30 +638,38 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] Starting command listener...")
         
         while self.running and not self.stop_event.is_set():
-            self.check_commands()
+            # Only check commands if authenticated
+            if self.authenticated:
+                self.check_commands()
             time.sleep(COMMAND_CHECK_INTERVAL)
     
     def start(self):
         """Start the robot client"""
+        # Try initial authentication
         if not self.login():
-            print(f"[ROBOT-{self.robot_id}] Cannot start without authentication")
-            return False
+            print(f"[ROBOT-{self.robot_id}] ⚠️ Authentication failed. Waiting for manual retry from UI...")
+            print(f"[ROBOT-{self.robot_id}] Please enter the correct password in the web interface.")
+            # Don't return False - continue to allow UI access for password retry
         
-        # Fetch last known position from server
-        print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
-        self.fetch_last_position()
-        
-        # Check for software updates during boot sequence
-        print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
-        self.check_software_updates()
-        
+        # Start the robot client even if authentication failed initially
+        # The UI will prompt for password retry
         self.running = True
         
-        # Start telemetry thread
+        # Only fetch position and check updates if authenticated
+        if self.authenticated:
+            # Fetch last known position from server
+            print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
+            self.fetch_last_position()
+            
+            # Check for software updates during boot sequence
+            print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
+            self.check_software_updates()
+        
+        # Start telemetry thread (will only send if authenticated)
         telemetry_thread = Thread(target=self.run_telemetry_loop, daemon=True)
         telemetry_thread.start()
         
-        # Start command listener thread
+        # Start command listener thread (will only listen if authenticated)
         command_thread = Thread(target=self.run_command_loop, daemon=True)
         command_thread.start()
         
@@ -668,11 +697,52 @@ def index():
     """Serve the control interface"""
     return render_template('control.html')
 
+@control_app.route('/api/auth/status')
+def auth_status():
+    """Check authentication status"""
+    if robot_client:
+        return jsonify({
+            'authenticated': robot_client.authenticated,
+            'username': robot_client.username,
+            'robot_id': robot_client.robot_id
+        })
+    return jsonify({'authenticated': False, 'error': 'Robot not initialized'}), 500
+
+@control_app.route('/api/auth/retry', methods=['POST'])
+def auth_retry():
+    """Retry authentication with new password"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    new_password = data.get('password', '')
+    
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Password required'}), 400
+    
+    # Attempt authentication with new password
+    success = robot_client.retry_authentication(new_password)
+    
+    if success:
+        # Fetch position and check updates after successful authentication
+        robot_client.fetch_last_position()
+        robot_client.check_software_updates()
+        return jsonify({
+            'success': True,
+            'message': f'Authenticated as {robot_client.username}'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials. Please try again.'
+        }), 401
+
 @control_app.route('/api/control/status')
 def get_status():
     """Get current robot status"""
     if robot_client:
         return jsonify({
+            'authenticated': robot_client.authenticated,
             'robot_id': robot_client.robot_id,
             'position': robot_client.position,
             'battery_voltage': robot_client.battery_voltage,
@@ -689,6 +759,9 @@ def control_move():
     """Control robot position"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     data = request.json
     direction = data.get('direction', '')
@@ -714,6 +787,9 @@ def control_voltage():
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
     
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
     data = request.json
     voltage = data.get('voltage', 24.5)
     robot_client.battery_voltage = max(22.0, min(25.2, voltage))
@@ -726,6 +802,9 @@ def control_temperature():
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
     
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
     data = request.json
     temp = data.get('temperature', 45)
     robot_client.temperature = max(35, min(85, temp))
@@ -737,6 +816,9 @@ def control_operation():
     """Control special operations"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     data = request.json
     operation = data.get('operation', '').lower()
@@ -764,6 +846,9 @@ def control_power():
     """Toggle power on/off"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     if robot_client.is_powered_on:
         # Turning OFF
