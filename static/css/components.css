@@ -32,7 +32,7 @@
 
 /* Dashboard HUD Cards */
 .bg-panel {
-    background: rgba(10, 10, 10, 0.95);
+    background: rgba(10, 10, 10, 0.479);
     border: 1px solid rgba(0, 243, 255, 0.3);
     border-radius: 8px;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
@@ -582,4 +582,43 @@ select.form-control-cyber option,
         height: 6px;
         left: 8px;
     }
+}
+ 
+ 
+/* Navigation Bar Enhancements */
+.navbar-nav .nav-link {
+    color: var(--text-secondary);
+    font-family: var(--font-head);
+    font-weight: 500;
+    font-size: 0.95rem;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s ease;
+    border-bottom: 2px solid transparent;
+}
+
+.navbar-nav .nav-link:hover {
+    color: var(--neon-blue);
+    text-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+.navbar-nav .nav-link.active {
+    color: var(--neon-blue);
+    border-bottom-color: var(--neon-blue);
+    text-shadow: 0 0 15px rgba(0, 212, 255, 0.8);
+}
+
+.navbar-toggler {
+    border-color: var(--neon-blue);
+}
+
+.navbar-toggler:focus {
+    box-shadow: 0 0 0 0.25rem rgba(0, 212, 255, 0.25);
+}
+
+.navbar-brand img {
+    transition: filter 0.3s ease;
+}
+
+.navbar-brand:hover img {
+    filter: drop-shadow(0 0 15px rgba(0, 212, 255, 0.8)) !important;
 }
