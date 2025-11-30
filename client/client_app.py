@@ -50,18 +50,65 @@ def is_valid_position(x, y):
     # Check obstacle collision
     return not check_collision(x, y)
 
-# Load environment variables
-# Priority: .env (personal credentials) -> config.env (defaults/template)
-if os.path.exists('.env'):
-    print("[CONFIG] Loading credentials from .env")
-    load_dotenv('.env')
+# ============================================================================
+# ENVIRONMENT CONFIGURATION (Module-level initialization for gunicorn safety)
+# ============================================================================
+
+# Get the directory where this script is located (for relative path resolution)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load environment variables with flexible priority:
+# 1. System environment (from systemd EnvironmentFile or shell)
+# 2. .env file (personal credentials, optional)
+# 3. config.env (defaults/template, optional)
+# 
+# For systemd deployment: Use EnvironmentFile instead of .env/config.env
+# For development: Use .env or config.env for convenience
+env_file = os.path.join(SCRIPT_DIR, '.env')
+config_file = os.path.join(SCRIPT_DIR, 'config.env')
+
+if os.path.exists(env_file):
+    print(f"[CONFIG] Loading credentials from {env_file}")
+    load_dotenv(env_file, override=False)  # Don't override existing env vars
+elif os.path.exists(config_file):
+    print(f"[CONFIG] Loading defaults from {config_file}")
+    load_dotenv(config_file, override=False)
 else:
-    print("[CONFIG] .env not found, loading from config.env")
-    load_dotenv('config.env')
+    print(f"[CONFIG] No .env or config.env found, using system environment only")
+
+# Load configuration from environment (safe for gunicorn & systemd)
+# Note: Using ROBOT_USERNAME/ROBOT_PASSWORD to avoid conflicts with Windows USERNAME env var
+SERVER_URL = os.getenv('SERVER_URL', 'http://127.0.0.1:5001')
+USERNAME = os.getenv('ROBOT_USERNAME')
+PASSWORD = os.getenv('ROBOT_PASSWORD')
+ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
+UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5001'))
+
+# Validate configuration
+if not USERNAME or not PASSWORD:
+    print("\n[ERROR] Missing credentials!")
+    print("Please set ROBOT_USERNAME and ROBOT_PASSWORD environment variables")
+    print("or create a .env file with these values")
+    print("See .env.example for template")
+    # Don't exit immediately - allow import to succeed for gunicorn
+    # but log the error clearly
+    USERNAME = USERNAME or 'MISSING_USERNAME'
+    PASSWORD = PASSWORD or 'MISSING_PASSWORD'
+
+if USERNAME.startswith('<') or USERNAME.startswith('your-'):
+    print("\n[WARNING] Username appears to be a placeholder!")
+    print("Please update .env with actual credentials")
+
+print(f"[CONFIG] Server: {SERVER_URL}")
+print(f"[CONFIG] Robot ID: {ROBOT_ID}")
+print(f"[CONFIG] User: {USERNAME}")
+print(f"[CONFIG] Control UI Port: {UI_PORT}")
 
 # Flask app for control interface
 control_app = Flask(__name__)
-robot_client = None  # Will be set after initialization
+
+# Robot client instance (initialized at module level for gunicorn compatibility)
+robot_client = None
 
 class RobotClient:
     def __init__(self, server_url, username, password, robot_id=1):
@@ -1016,62 +1063,81 @@ def run_control_interface(port):
     control_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
+def initialize_robot_client(server_url=None, username=None, password=None, robot_id=None):
+    """Initialize the robot client with given or default configuration"""
+    global robot_client
+    
+    # Use provided values or fall back to module-level config
+    server_url = server_url or SERVER_URL
+    username = username or USERNAME
+    password = password or PASSWORD
+    robot_id = robot_id or ROBOT_ID
+    
+    # Validate credentials
+    if not username or not password or username == 'MISSING_USERNAME' or password == 'MISSING_PASSWORD':
+        raise ValueError("Invalid or missing credentials. Please check environment variables.")
+    
+    robot_client = RobotClient(server_url, username, password, robot_id)
+    return robot_client
+
+
 def main():
-    """Main entry point"""
+    """Main entry point for standalone execution"""
     print("=" * 60)
     print("SITARA ROBOT CLIENT")
     print("=" * 60)
     
-    # Configuration from environment variables
-    # Note: Using ROBOT_USERNAME/ROBOT_PASSWORD to avoid conflicts with Windows USERNAME env var
-    SERVER_URL = os.getenv('SERVER_URL', 'http://127.0.0.1:5001')
-    USERNAME = os.getenv('ROBOT_USERNAME')
-    PASSWORD = os.getenv('ROBOT_PASSWORD')
-    ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
-    
-    # Validate required credentials
-    if not USERNAME or not PASSWORD:
-        print("\n[ERROR] Missing credentials!")
-        print("Please create a .env file with ROBOT_USERNAME and ROBOT_PASSWORD")
-        print("See .env.example for template")
-        sys.exit(1)
-    
-    if USERNAME.startswith('<') or USERNAME.startswith('your-'):
-        print("\n[ERROR] Please update .env with actual credentials!")
-        print("Current username appears to be a placeholder")
-        sys.exit(1)
-    
-    # Get control UI port
-    UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5002'))
+    # Use module-level configuration
+    server_url = SERVER_URL
+    username = USERNAME
+    password = PASSWORD
+    robot_id = ROBOT_ID
+    ui_port = UI_PORT
     
     # Allow command line override
     # Usage: python client_app.py [robot_id] [username] [password] [port]
     import argparse
     parser = argparse.ArgumentParser(description='SITARA Robot Client')
-    parser.add_argument('robot_id', type=int, nargs='?', default=ROBOT_ID, help='Robot ID')
-    parser.add_argument('username', nargs='?', default=USERNAME, help='Username')
-    parser.add_argument('password', nargs='?', default=PASSWORD, help='Password')
-    parser.add_argument('port', type=int, nargs='?', default=UI_PORT, help='Control UI port (default: 5002)')
+    parser.add_argument('robot_id', type=int, nargs='?', default=robot_id, help='Robot ID')
+    parser.add_argument('username', nargs='?', default=username, help='Username')
+    parser.add_argument('password', nargs='?', default=password, help='Password')
+    parser.add_argument('port', type=int, nargs='?', default=ui_port, help='Control UI port (default: 5002)')
     args = parser.parse_args()
     
-    ROBOT_ID = args.robot_id
-    USERNAME = args.username or USERNAME
-    PASSWORD = args.password or PASSWORD
-    UI_PORT = args.port
+    # Override with command line args if provided
+    robot_id = args.robot_id
+    username = args.username or username
+    password = args.password or password
+    ui_port = args.port
+    
+    # Validate credentials
+    if not username or not password:
+        print("\n[ERROR] Missing credentials!")
+        print("Please create a .env file with ROBOT_USERNAME and ROBOT_PASSWORD")
+        print("See .env.example for template")
+        sys.exit(1)
+    
+    if username.startswith('<') or username.startswith('your-') or username == 'MISSING_USERNAME':
+        print("\n[ERROR] Please update .env with actual credentials!")
+        print("Current username appears to be a placeholder or missing")
+        sys.exit(1)
     
     print(f"Configuration:")
-    print(f"  Server: {SERVER_URL}")
-    print(f"  Robot ID: {ROBOT_ID}")
-    print(f"  User: {USERNAME}")
-    print(f"  Control UI: http://127.0.0.1:{UI_PORT}")
+    print(f"  Server: {server_url}")
+    print(f"  Robot ID: {robot_id}")
+    print(f"  User: {username}")
+    print(f"  Control UI: http://127.0.0.1:{ui_port}")
     print("=" * 60)
     
-    # Create and start client
-    global robot_client
-    robot_client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
+    # Initialize robot client
+    try:
+        initialize_robot_client(server_url, username, password, robot_id)
+    except ValueError as e:
+        print(f"\n[ERROR] Failed to initialize robot client: {e}")
+        sys.exit(1)
     
     # Start Flask control interface in a separate thread
-    ui_thread = Thread(target=run_control_interface, args=(UI_PORT,), daemon=True)
+    ui_thread = Thread(target=run_control_interface, args=(ui_port,), daemon=True)
     ui_thread.start()
     
     # Give the UI a moment to start
