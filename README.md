@@ -2,17 +2,24 @@
 
 ## 📚 Documentation Index
 
-### Main Documentation
+### Getting Started
 - **[README.md](README.md)** - Main project documentation (this file)
-- **[VERSION_MANAGEMENT_GUIDE.md](VERSION_MANAGEMENT_GUIDE.md)** - Software version tracking and management guide
-- **[BATTERY_DISPLAY_UPDATE.md](BATTERY_DISPLAY_UPDATE.md)** - Battery display implementation details
-
-### Client Documentation
 - **[client/README.md](client/README.md)** - Robot client application setup and usage
-- **[client/ARCHITECTURE.md](client/ARCHITECTURE.md)** - Client architecture and design patterns
-- **[client/CREDENTIALS.md](client/CREDENTIALS.md)** - Credential configuration and security
-- **[client/GUNICORN_DEPLOYMENT.md](client/GUNICORN_DEPLOYMENT.md)** - Production deployment with Gunicorn
-- **[client/systemd/README.md](client/systemd/README.md)** - SystemD service configuration
+
+### System Documentation
+- **[Architecture](docs/ARCHITECTURE.md)** - Client architecture and design patterns
+- **[Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md)** - Recent features and implementation details
+- **[Version Management](docs/VERSION_MANAGEMENT_GUIDE.md)** - Software version tracking and management
+
+### Feature Documentation
+- **[Battery Display](docs/BATTERY_DISPLAY_UPDATE.md)** - Battery display implementation and features
+- **[Client Database](docs/CLIENT_DATABASE.md)** - Local database for version tracking and credentials
+- **[Password Sync](docs/PASSWORD_SYNC.md)** - Password synchronization and persistence
+
+### Deployment & Configuration
+- **[Credentials Setup](docs/CREDENTIALS.md)** - Credential configuration and security
+- **[Gunicorn Deployment](docs/GUNICORN_DEPLOYMENT.md)** - Production deployment with Gunicorn
+- **[SystemD Service](client/systemd/README.md)** - SystemD service configuration for Linux
 
 ---
 
