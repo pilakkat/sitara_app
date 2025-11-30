@@ -761,9 +761,14 @@ class RobotClient:
         """Get status string with battery warning appended if battery is low"""
         base_status = self.status
         
-        # Append battery warning if voltage is low
+        # Append battery warning if voltage is low (and not already appended)
         if self.battery_voltage < BATTERY_LOW_THRESHOLD:
-            return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+            if not base_status.endswith(STATUS_BATTERY_LOW_SUFFIX):
+                return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+        else:
+            # Remove battery warning if voltage recovered
+            if base_status.endswith(STATUS_BATTERY_LOW_SUFFIX):
+                return base_status.replace(STATUS_BATTERY_LOW_SUFFIX, '')
         
         return base_status
     
