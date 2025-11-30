@@ -16,6 +16,68 @@ from dotenv import load_dotenv
 from flask import Flask, render_template_string, request, jsonify
 import sys
 
+# ============================================================================
+# CONFIGURATION CONSTANTS
+# ============================================================================
+
+# Battery Configuration (24V Li-ion 6S system)
+BATTERY_MAX_VOLTAGE = 25.2  # Fully charged voltage
+BATTERY_MIN_VOLTAGE = 20.0  # Critical/empty voltage
+BATTERY_NOMINAL_VOLTAGE = 24.5  # Normal operating voltage
+BATTERY_LOW_THRESHOLD = 22.65  # Warning threshold (~38%)
+BATTERY_CRITICAL_THRESHOLD = 20.0  # Critical threshold - stop movement
+
+# Temperature Configuration (Celsius)
+TEMP_MIN = 35  # Minimum temperature when idle
+TEMP_MAX = 85  # Maximum safe temperature
+TEMP_NORMAL = 45  # Normal operating temperature
+TEMP_COOLDOWN_RATE = 0.2  # Temperature decrease rate when idle
+TEMP_INCREASE_MOVING = 0.1  # Temperature increase when moving
+TEMP_INCREASE_SCANNING = 0.05  # Temperature increase when scanning
+
+# Movement Configuration
+MOVEMENT_SPEED = 1.0  # Units per update cycle
+MOVEMENT_BATTERY_DRAIN = 0.001  # Battery drain per movement cycle
+STANDBY_BATTERY_RECOVERY = 0.002  # Battery recovery when idle
+COLLISION_BUFFER = 2  # Safety buffer around obstacles (%)
+
+# Position Boundaries (% of map)
+MAP_SAFE_MIN = 5  # Minimum safe position
+MAP_SAFE_MAX = 95  # Maximum safe position
+
+# Telemetry Timing
+TELEMETRY_INTERVAL = 5  # Seconds between telemetry updates
+COMMAND_CHECK_INTERVAL = 3  # Seconds between command checks
+
+# Motor Load
+MOTOR_LOAD_MOVING = 65  # Motor load % when moving
+MOTOR_LOAD_SCANNING = 30  # Motor load % when scanning
+MOTOR_LOAD_STANDBY = 0  # Motor load % when idle
+
+# Robot Status Codes
+STATUS_STANDBY = "STANDBY"
+STATUS_MOVING = "MOVING"
+STATUS_SCANNING = "SCANNING"
+STATUS_CHARGING = "CHARGING"
+STATUS_FAULT = "FAULT"
+STATUS_OFFLINE = "OFFLINE"
+STATUS_BOOTING = "BOOTING"
+STATUS_BATTERY_LOW_SUFFIX = " | BAT LOW"
+
+# Software Version Configuration
+VERSION_RCPCU = '2.3.1'  # Robot Central Processing & Control Unit
+VERSION_RCSPM = '1.8.5'  # Robot Control System & Power Management
+VERSION_RCMMC = '3.1.2'  # Robot Control Motion & Motor Controller
+VERSION_RCPMU = '1.5.9'  # Robot Control Power Management Unit
+
+# Network Timeouts
+NETWORK_TIMEOUT_DEFAULT = 5  # Default timeout for API calls (seconds)
+NETWORK_TIMEOUT_EXTENDED = 10  # Extended timeout for version checks (seconds)
+
+# ============================================================================
+# OBSTACLE DEFINITIONS
+# ============================================================================
+
 # Define obstacle boundaries (x, y, width, height in %)
 OBSTACLES = [
     # Walls (5% thick)
@@ -32,7 +94,7 @@ OBSTACLES = [
     {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
 ]
 
-def check_collision(x, y, buffer=2):
+def check_collision(x, y, buffer=COLLISION_BUFFER):
     """Check if position collides with any obstacle"""
     for obstacle in OBSTACLES:
         if (x >= (obstacle['x'] - buffer) and 
@@ -45,7 +107,7 @@ def check_collision(x, y, buffer=2):
 def is_valid_position(x, y):
     """Check if position is valid (within bounds and no collision)"""
     # Keep robot within safe area (away from edges)
-    if x < 5 or x > 95 or y < 5 or y > 95:
+    if x < MAP_SAFE_MIN or x > MAP_SAFE_MAX or y < MAP_SAFE_MIN or y > MAP_SAFE_MAX:
         return False
     # Check obstacle collision
     return not check_collision(x, y)
@@ -122,19 +184,19 @@ class RobotClient:
         
         # Robot state
         self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
-        self.battery_voltage = 24.5
-        self.temperature = 45.0
-        self.motor_load = 0
-        self.status = "STANDBY"
+        self.battery_voltage = BATTERY_NOMINAL_VOLTAGE
+        self.temperature = TEMP_NORMAL
+        self.motor_load = MOTOR_LOAD_STANDBY
+        self.status = STATUS_STANDBY
         self.cycle_count = 0
         self.is_powered_on = True  # Track power state
         
         # Software versions for 4 controllers
         self.versions = {
-            'RCPCU': '2.3.1',  # Robot Central Processing & Control Unit
-            'RCSPM': '1.8.5',  # Robot Control System & Power Management
-            'RCMMC': '3.1.2',  # Robot Control Motion & Motor Controller
-            'RCPMU': '1.5.9'   # Robot Control Power Management Unit
+            'RCPCU': VERSION_RCPCU,
+            'RCSPM': VERSION_RCSPM,
+            'RCMMC': VERSION_RCMMC,
+            'RCPMU': VERSION_RCPMU
         }
         self.last_version_check = None
         
@@ -142,7 +204,7 @@ class RobotClient:
         self.last_telemetry_state = None
         
         # Movement parameters
-        self.speed = 1.0  # units per update
+        self.speed = MOVEMENT_SPEED
         self.current_command = None
         
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
@@ -175,7 +237,7 @@ class RobotClient:
         try:
             response = self.session.get(
                 f"{self.server_url}/api/software/latest_versions",
-                timeout=10
+                timeout=NETWORK_TIMEOUT_EXTENDED
             )
             
             if response.status_code == 200:
@@ -214,7 +276,7 @@ class RobotClient:
             response = self.session.post(
                 f"{self.server_url}/api/robot/version",
                 json=version_data,
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
@@ -247,7 +309,7 @@ class RobotClient:
             response = self.session.get(
                 f"{self.server_url}/api/telemetry",
                 params={'robot_id': self.robot_id},
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
@@ -289,13 +351,16 @@ class RobotClient:
             # Generate timestamp on client side for accurate time tracking
             timestamp = datetime.now(timezone.utc).isoformat()
             
+            # Get status with battery warning appended if needed
+            status_to_send = self.get_status_with_battery_warning()
+            
             # Current state (excluding timestamp for comparison)
             current_state = {
                 'robot_id': self.robot_id,
                 'battery_voltage': round(self.battery_voltage, 2),
                 'temperature': round(self.temperature, 1),
                 'motor_load': self.motor_load,
-                'status': self.status,
+                'status': status_to_send,
                 'cycle_count': self.cycle_count,
                 'x': round(self.position['x'], 2),
                 'y': round(self.position['y'], 2),
@@ -314,13 +379,13 @@ class RobotClient:
             response = self.session.post(
                 f"{self.server_url}/api/robot/telemetry",
                 json=telemetry_data,
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
                 # Update last sent state
                 self.last_telemetry_state = current_state
-                print(f"[ROBOT-{self.robot_id}] → Telemetry sent | Status: {self.status} | Pos: ({self.position['x']:.1f}, {self.position['y']:.1f}) | Battery: {self.battery_voltage:.2f}V")
+                print(f"[ROBOT-{self.robot_id}] → Telemetry sent | Status: {status_to_send} | Pos: ({self.position['x']:.1f}, {self.position['y']:.1f}) | Battery: {self.battery_voltage:.2f}V")
                 return True
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Telemetry failed: {response.status_code}")
@@ -334,12 +399,15 @@ class RobotClient:
         try:
             timestamp = datetime.now(timezone.utc).isoformat()
             
+            # Get status with battery warning appended if needed
+            status_to_send = self.get_status_with_battery_warning()
+            
             current_state = {
                 'robot_id': self.robot_id,
                 'battery_voltage': round(self.battery_voltage, 2),
                 'temperature': round(self.temperature, 1),
                 'motor_load': self.motor_load,
-                'status': self.status,
+                'status': status_to_send,
                 'cycle_count': self.cycle_count,
                 'x': round(self.position['x'], 2),
                 'y': round(self.position['y'], 2),
@@ -352,12 +420,12 @@ class RobotClient:
             response = self.session.post(
                 f"{self.server_url}/api/robot/telemetry",
                 json=telemetry_data,
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
                 self.last_telemetry_state = current_state
-                print(f"[ROBOT-{self.robot_id}] → Immediate telemetry sent | Status: {self.status}")
+                print(f"[ROBOT-{self.robot_id}] → Immediate telemetry sent | Status: {status_to_send}")
                 return True
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Immediate telemetry failed: {response.status_code}")
@@ -372,7 +440,7 @@ class RobotClient:
             response = self.session.get(
                 f"{self.server_url}/api/robot/commands",
                 params={'robot_id': self.robot_id},
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
@@ -403,32 +471,32 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] ← Received command: {cmd_type}")
         
         if cmd_type == 'move_forward':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_forward'
         elif cmd_type == 'move_up':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_up'
         elif cmd_type == 'move_down':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_down'
         elif cmd_type == 'move_left':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_left'
         elif cmd_type == 'move_right':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_right'
         elif cmd_type == 'stop' or cmd_type == 'halt':
-            self.status = "STANDBY"
-            self.motor_load = 0
+            self.status = STATUS_STANDBY
+            self.motor_load = MOTOR_LOAD_STANDBY
             self.current_command = None
         elif cmd_type == 'scan_area':
-            self.status = "SCANNING"
-            self.motor_load = 30
+            self.status = STATUS_SCANNING
+            self.motor_load = MOTOR_LOAD_SCANNING
             self.current_command = 'scan'
         else:
             print(f"[ROBOT-{self.robot_id}] Unknown command: {cmd_type}")
@@ -436,7 +504,7 @@ class RobotClient:
     def update_robot_state(self):
         """Update robot's internal state based on current command"""
         # Update position based on status and current command
-        if self.status == "MOVING":
+        if self.status == STATUS_MOVING:
             # Calculate new position based on command
             new_x = self.position['x']
             new_y = self.position['y']
@@ -470,40 +538,53 @@ class RobotClient:
             else:
                 # Stop if collision detected
                 print(f"[ROBOT-{self.robot_id}] Collision detected at ({new_x:.1f}, {new_y:.1f}), stopping")
-                self.status = "STANDBY"
-                self.motor_load = 0
+                self.status = STATUS_STANDBY
+                self.motor_load = MOTOR_LOAD_STANDBY
                 self.current_command = None
             
             # Battery drain
-            self.battery_voltage -= 0.001
-            self.temperature += 0.1
+            self.battery_voltage -= MOVEMENT_BATTERY_DRAIN
+            self.temperature += TEMP_INCREASE_MOVING
             
-        elif self.status == "SCANNING":
+        elif self.status == STATUS_SCANNING:
             # Rotate in place
             self.position['orientation'] += 2
             self.position['orientation'] = self.position['orientation'] % 360
-            self.temperature += 0.05
+            self.temperature += TEMP_INCREASE_SCANNING
             
-        elif self.status == "STANDBY":
+        elif self.status == STATUS_STANDBY:
             # Cool down when on standby
-            if self.temperature > 40:
-                self.temperature -= 0.2
+            if self.temperature > TEMP_MIN:
+                self.temperature -= TEMP_COOLDOWN_RATE
             # Battery slowly recovers if not moving
-            if self.battery_voltage < 24.5:
-                self.battery_voltage += 0.002
+            if self.battery_voltage < BATTERY_NOMINAL_VOLTAGE:
+                self.battery_voltage += STANDBY_BATTERY_RECOVERY
         
         # Battery limits
-        self.battery_voltage = max(22.0, min(25.2, self.battery_voltage))
+        self.battery_voltage = max(BATTERY_MIN_VOLTAGE, min(BATTERY_MAX_VOLTAGE, self.battery_voltage))
         
         # Temperature limits
-        self.temperature = max(35, min(85, self.temperature))
+        self.temperature = max(TEMP_MIN, min(TEMP_MAX, self.temperature))
         
-        # Battery warnings
-        if self.battery_voltage < 20.0:
-            self.status = "BATTERY LOW"
-            self.motor_load = 0
+        # Battery warnings - stop movement if critically low
+        if self.battery_voltage < BATTERY_CRITICAL_THRESHOLD:
+            # Stop movement but keep current status
+            if self.status == STATUS_MOVING:
+                self.status = STATUS_STANDBY
+            self.motor_load = MOTOR_LOAD_STANDBY
+            self.current_command = None
         
         # Note: cycle_count is NOT incremented here - it only increments on power-on
+    
+    def get_status_with_battery_warning(self):
+        """Get status string with battery warning appended if battery is low"""
+        base_status = self.status
+        
+        # Append battery warning if voltage is low
+        if self.battery_voltage < BATTERY_LOW_THRESHOLD:
+            return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+        
+        return base_status
     
     def run_telemetry_loop(self):
         """Main loop for sending telemetry"""
@@ -518,7 +599,7 @@ class RobotClient:
                 print(f"[ROBOT-{self.robot_id}] Daily version check triggered")
                 self.check_software_updates()
             
-            time.sleep(5)  # Send telemetry every 5 seconds
+            time.sleep(TELEMETRY_INTERVAL)
     
     def run_command_loop(self):
         """Loop for checking commands"""
@@ -526,7 +607,7 @@ class RobotClient:
         
         while self.running and not self.stop_event.is_set():
             self.check_commands()
-            time.sleep(3)  # Check for commands every 3 seconds
+            time.sleep(COMMAND_CHECK_INTERVAL)
     
     def start(self):
         """Start the robot client"""
@@ -1025,7 +1106,7 @@ def get_status():
             'position': robot_client.position,
             'battery_voltage': robot_client.battery_voltage,
             'temperature': robot_client.temperature,
-            'status': robot_client.status,
+            'status': robot_client.get_status_with_battery_warning(),
             'motor_load': robot_client.motor_load,
             'cycle_count': robot_client.cycle_count,
             'is_powered_on': robot_client.is_powered_on
@@ -1090,20 +1171,20 @@ def control_operation():
     operation = data.get('operation', '').lower()
     
     if operation == 'charging':
-        robot_client.status = 'CHARGING'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_CHARGING
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'fault':
-        robot_client.status = 'FAULT'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_FAULT
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'standby':
-        robot_client.status = 'STANDBY'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_STANDBY
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'moving':
-        robot_client.status = 'MOVING'
-        robot_client.motor_load = 65
+        robot_client.status = STATUS_MOVING
+        robot_client.motor_load = MOTOR_LOAD_MOVING
     elif operation == 'scanning':
-        robot_client.status = 'SCANNING'
-        robot_client.motor_load = 30
+        robot_client.status = STATUS_SCANNING
+        robot_client.motor_load = MOTOR_LOAD_SCANNING
     
     return jsonify({'success': True})
 
@@ -1115,15 +1196,15 @@ def control_power():
     
     if robot_client.is_powered_on:
         # Turning OFF
-        robot_client.status = 'OFFLINE'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_OFFLINE
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
         robot_client.is_powered_on = False
         # Send immediate telemetry before stopping
         robot_client.send_telemetry_immediate()
     else:
         # Turning ON - start with BOOTING
         robot_client.is_powered_on = True
-        robot_client.status = 'BOOTING'
+        robot_client.status = STATUS_BOOTING
         robot_client.motor_load = 10
         
         # Increment cycle count (power-on cycle)
@@ -1138,9 +1219,9 @@ def control_power():
         def transition_to_standby():
             import time
             time.sleep(3)  # Boot for 3 seconds
-            if robot_client.is_powered_on and robot_client.status == 'BOOTING':
-                robot_client.status = 'STANDBY'
-                robot_client.motor_load = 0
+            if robot_client.is_powered_on and robot_client.status == STATUS_BOOTING:
+                robot_client.status = STATUS_STANDBY
+                robot_client.motor_load = MOTOR_LOAD_STANDBY
                 robot_client.send_telemetry_immediate()
         
         threading.Thread(target=transition_to_standby, daemon=True).start()
