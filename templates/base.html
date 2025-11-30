@@ -28,6 +28,17 @@
                             <span>{{ current_user.username }}</span>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown" style="background: rgba(10, 10, 30, 0.95); border: 1px solid var(--neon-blue); box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);">
+                            {% if current_user.username == 'admin' %}
+                            <li>
+                                <h6 class="dropdown-header" style="color: var(--neon-blue); font-family: var(--font-head); font-size: 0.7rem; opacity: 0.7;">ADMIN</h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('software_management') }}" style="color: var(--neon-blue); transition: all 0.3s ease;">
+                                    <i class="bi bi-cpu"></i> Software Management
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider" style="border-color: rgba(0, 243, 255, 0.3);"></li>
+                            {% endif %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('change_password') }}" style="color: var(--neon-blue); transition: all 0.3s ease;">
                                     <i class="bi bi-key"></i> Change Password

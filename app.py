@@ -52,6 +52,20 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(150), nullable=False) # In prod, hash this!
 
+# --- Software Version Management ---
+class SoftwareVersion(db.Model):
+    __tablename__ = 'software_versions'
+    id = db.Column(db.Integer, primary_key=True)
+    controller_name = db.Column(db.String(20), unique=True, nullable=False)  # RCPCU, RCSPM, RCMMC, RCPMU
+    version = db.Column(db.String(20), nullable=False)
+    release_date = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+    release_notes = db.Column(db.Text)
+    published_by = db.Column(db.Integer, db.ForeignKey('user.id'))
+    is_published = db.Column(db.Boolean, default=False)
+    
+    # Relationships
+    publisher = db.relationship('User', backref=db.backref('published_versions', lazy='dynamic'))
+
 # --- 1. Robot Identity (The "Thing") ---
 class Robot(db.Model):
     __tablename__ = 'robots'
@@ -303,6 +317,21 @@ def change_password():
         return render_template('change_password.html', success='Password updated successfully!')
     
     return render_template('change_password.html')
+
+@app.route('/software-management')
+@login_required
+def software_management():
+    """Software version management page - Admin only"""
+    if current_user.username != 'admin':
+        return redirect(url_for('dashboard'))
+    
+    # Get all software versions
+    versions = SoftwareVersion.query.all()
+    
+    # Get all robots with their current versions
+    robots = Robot.query.all()
+    
+    return render_template('software_management.html', versions=versions, robots=robots)
 
 @app.route('/dashboard')
 @login_required
@@ -995,23 +1024,155 @@ def get_latest_software_versions():
     Returns the latest available software versions for all 4 robot controllers
     This endpoint is called by robots during boot sequence and daily at midnight
     """
-    # In production, these would come from a version database or config file
-    # For now, we'll use hardcoded latest versions
-    latest_versions = {
-        'RCPCU': '2.3.1',  # Robot Central Processing & Control Unit
-        'RCSPM': '1.8.5',  # Robot Control System & Power Management
-        'RCMMC': '3.1.2',  # Robot Control Motion & Motor Controller
-        'RCPMU': '1.5.9',  # Robot Control Power Management Unit
-        'release_date': '2025-11-28',
-        'release_notes': {
-            'RCPCU': 'Performance improvements and bug fixes',
-            'RCSPM': 'Enhanced power management algorithms',
-            'RCMMC': 'Improved motor control precision',
-            'RCPMU': 'Battery optimization updates'
-        }
-    }
+    # Get published versions from database
+    published_versions = SoftwareVersion.query.filter_by(is_published=True).all()
     
-    return jsonify(latest_versions), 200
+    # Build response dictionary
+    latest_versions = {}
+    release_notes = {}
+    latest_date = None
+    
+    for version in published_versions:
+        latest_versions[version.controller_name] = version.version
+        release_notes[version.controller_name] = version.release_notes or 'No release notes available'
+        
+        # Track the most recent release date
+        if version.release_date:
+            if latest_date is None or version.release_date > latest_date:
+                latest_date = version.release_date
+    
+    # Fallback to default versions if none published
+    if not latest_versions:
+        latest_versions = {
+            'RCPCU': '2.3.1',
+            'RCSPM': '1.8.5',
+            'RCMMC': '3.1.2',
+            'RCPMU': '1.5.9'
+        }
+        release_notes = {
+            'RCPCU': 'Default version',
+            'RCSPM': 'Default version',
+            'RCMMC': 'Default version',
+            'RCPMU': 'Default version'
+        }
+        latest_date = datetime.now(timezone.utc)
+    
+    return jsonify({
+        **latest_versions,
+        'release_date': latest_date.strftime('%Y-%m-%d') if latest_date else None,
+        'release_notes': release_notes
+    }), 200
+
+@app.route('/api/software/versions', methods=['GET', 'POST'])
+@login_required
+def manage_software_versions():
+    """Get all versions or create/update a version - Admin only"""
+    if current_user.username != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    if request.method == 'GET':
+        versions = SoftwareVersion.query.all()
+        return jsonify([{
+            'id': v.id,
+            'controller_name': v.controller_name,
+            'version': v.version,
+            'release_date': format_timestamp(v.release_date),
+            'release_notes': v.release_notes,
+            'is_published': v.is_published,
+            'published_by': v.publisher.username if v.publisher else None
+        } for v in versions]), 200
+    
+    elif request.method == 'POST':
+        data = request.json
+        controller_name = data.get('controller_name')
+        version = data.get('version')
+        release_notes = data.get('release_notes', '')
+        
+        if not controller_name or not version:
+            return jsonify({'error': 'controller_name and version are required'}), 400
+        
+        # Check if version already exists for this controller
+        existing = SoftwareVersion.query.filter_by(controller_name=controller_name).first()
+        
+        if existing:
+            # Update existing
+            existing.version = version
+            existing.release_notes = release_notes
+            existing.release_date = datetime.now(timezone.utc)
+            existing.published_by = current_user.id
+        else:
+            # Create new
+            new_version = SoftwareVersion(
+                controller_name=controller_name,
+                version=version,
+                release_notes=release_notes,
+                published_by=current_user.id,
+                is_published=False
+            )
+            db.session.add(new_version)
+        
+        db.session.commit()
+        return jsonify({'success': True, 'message': 'Version saved'}), 200
+
+@app.route('/api/software/versions/<int:version_id>/publish', methods=['POST'])
+@login_required
+def publish_software_version(version_id):
+    """Publish a software version - Admin only"""
+    if current_user.username != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    version = SoftwareVersion.query.get(version_id)
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+    
+    version.is_published = True
+    version.release_date = datetime.now(timezone.utc)
+    version.published_by = current_user.id
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'{version.controller_name} version {version.version} published successfully'
+    }), 200
+
+@app.route('/api/software/versions/<int:version_id>/unpublish', methods=['POST'])
+@login_required
+def unpublish_software_version(version_id):
+    """Unpublish a software version - Admin only"""
+    if current_user.username != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    version = SoftwareVersion.query.get(version_id)
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+    
+    version.is_published = False
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'{version.controller_name} version {version.version} unpublished'
+    }), 200
+
+@app.route('/api/software/versions/<int:version_id>', methods=['DELETE'])
+@login_required
+def delete_software_version(version_id):
+    """Delete a software version - Admin only"""
+    if current_user.username != 'admin':
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    version = SoftwareVersion.query.get(version_id)
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+    
+    db.session.delete(version)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'{version.controller_name} version deleted'
+    }), 200
 
 @app.route('/api/robot/version', methods=['POST'])
 @login_required
