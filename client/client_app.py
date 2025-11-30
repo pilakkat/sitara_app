@@ -768,13 +768,6 @@ class RobotClient:
                 self.motor_load = MOTOR_LOAD_STANDBY
                 self.current_command = None
             
-            # Clear command after single execution to prevent continuous movement
-            # Commands from server are one-time actions, not continuous states
-            if self.current_command:
-                self.status = STATUS_STANDBY
-                self.motor_load = MOTOR_LOAD_STANDBY
-                self.current_command = None
-            
             # Battery drain
             self.battery_voltage -= MOVEMENT_BATTERY_DRAIN
             self.temperature += TEMP_INCREASE_MOVING
@@ -801,11 +794,12 @@ class RobotClient:
         
         # Battery warnings - stop movement if critically low
         if self.battery_voltage < BATTERY_CRITICAL_THRESHOLD:
-            # Stop movement but keep current status
+            # Stop movement if battery critically low
             if self.status == STATUS_MOVING:
+                print(f"[ROBOT-{self.robot_id}] Battery critically low ({self.battery_voltage:.2f}V), stopping movement")
                 self.status = STATUS_STANDBY
-            self.motor_load = MOTOR_LOAD_STANDBY
-            self.current_command = None
+                self.motor_load = MOTOR_LOAD_STANDBY
+                self.current_command = None
         
         # Note: cycle_count is NOT incremented here - it only increments on power-on
     
