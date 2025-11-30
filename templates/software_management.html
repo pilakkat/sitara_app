@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="text-neon" style="font-family: var(--font-head); font-weight: 700;">
+                <i class="bi bi-cpu"></i> SOFTWARE VERSION MANAGEMENT
+            </h2>
+            <p class="text-muted">Manage and publish software versions for robot controllers</p>
+        </div>
+    </div>
+
+    <!-- Controller Version Cards -->
+    <div class="row g-3 mb-4">
+        {% for controller in ['RCPCU', 'RCSPM', 'RCMMC', 'RCPMU'] %}
+        <div class="col-lg-6">
+            <div class="bg-panel hud-card">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="text-neon mb-0" style="font-family: var(--font-head);">
+                        {{ controller }}
+                    </h5>
+                    <span class="badge bg-secondary" id="status-{{ controller }}">Not Published</span>
+                </div>
+                
+                <p class="text-muted small mb-3" style="font-size: 0.85rem;">
+                    {% if controller == 'RCPCU' %}
+                        Robot Central Processing & Control Unit
+                    {% elif controller == 'RCSPM' %}
+                        Robot Control System & Power Management
+                    {% elif controller == 'RCMMC' %}
+                        Robot Control Motion & Motor Controller
+                    {% elif controller == 'RCPMU' %}
+                        Robot Control Power Management Unit
+                    {% endif %}
+                </p>
+                
+                <form onsubmit="saveVersion(event, '{{ controller }}')">
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Version Number</label>
+                        <input type="text" class="form-control form-control-cyber" 
+                               id="version-{{ controller }}" 
+                               placeholder="e.g., 2.3.1" 
+                               pattern="^\d+\.\d+\.\d+$"
+                               title="Version format: X.Y.Z (e.g., 2.3.1)"
+                               required>
+                        <small class="text-muted">Format: major.minor.patch (e.g., 2.3.1)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label text-secondary small">Release Notes</label>
+                        <textarea class="form-control form-control-cyber" 
+                                  id="notes-{{ controller }}" 
+                                  rows="3" 
+                                  placeholder="Enter release notes..."></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-cyber btn-sm flex-fill">
+                            <i class="bi bi-save"></i> Save
+                        </button>
+                        <button type="button" class="btn btn-success btn-sm flex-fill" 
+                                id="publish-{{ controller }}" 
+                                onclick="publishVersion('{{ controller }}')" 
+                                disabled>
+                            <i class="bi bi-cloud-upload"></i> Publish
+                        </button>
+                        <button type="button" class="btn btn-warning btn-sm" 
+                                id="unpublish-{{ controller }}" 
+                                onclick="unpublishVersion('{{ controller }}')" 
+                                style="display: none;">
+                            <i class="bi bi-cloud-slash"></i> Unpublish
+                        </button>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <small class="text-muted" id="info-{{ controller }}">
+                            <i class="bi bi-info-circle"></i> Save version before publishing
+                        </small>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Robot Fleet Status -->
+    <div class="row">
+        <div class="col-12">
+            <div class="bg-panel hud-card">
+                <h5 class="text-neon mb-3" style="font-family: var(--font-head);">
+                    <i class="bi bi-robot"></i> ROBOT FLEET STATUS
+                </h5>
+                
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover" style="border-color: rgba(0, 243, 255, 0.2);">
+                        <thead>
+                            <tr style="border-color: rgba(0, 243, 255, 0.3);">
+                                <th style="color: var(--neon-blue);">Serial Number</th>
+                                <th style="color: var(--neon-blue);">Model</th>
+                                <th style="color: var(--neon-blue);">RCPCU</th>
+                                <th style="color: var(--neon-blue);">RCSPM</th>
+                                <th style="color: var(--neon-blue);">RCMMC</th>
+                                <th style="color: var(--neon-blue);">RCPMU</th>
+                                <th style="color: var(--neon-blue);">Last Check</th>
+                            </tr>
+                        </thead>
+                        <tbody id="robotFleetTable">
+                            {% for robot in robots %}
+                            <tr style="border-color: rgba(0, 243, 255, 0.1);">
+                                <td style="color: var(--neon-blue);">{{ robot.serial_number }}</td>
+                                <td class="text-muted">{{ robot.model_type }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ robot.version_rcpcu or '0.0.0' }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ robot.version_rcspm or '0.0.0' }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ robot.version_rcmmc or '0.0.0' }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ robot.version_rcpmu or '0.0.0' }}</span>
+                                </td>
+                                <td class="text-muted small">
+                                    {% if robot.last_version_check %}
+                                        {{ robot.last_version_check.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        Never
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">No robots registered</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 2000;">
+    <div id="versionToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header" style="background: rgba(10, 10, 30, 0.95); border-bottom: 1px solid var(--neon-blue);">
+            <strong class="me-auto" style="color: var(--neon-blue);">Software Management</strong>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" style="background: rgba(10, 10, 30, 0.95); color: #fff;" id="toastMessage">
+            Message
+        </div>
+    </div>
+</div>
+
+<script>
+// Store version data
+let versionData = {};
+
+// Load existing versions on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadExistingVersions();
+});
+
+function showToast(message, type = 'info') {
+    const toastEl = document.getElementById('versionToast');
+    const toastBody = document.getElementById('toastMessage');
+    const toastHeader = toastEl.querySelector('.toast-header');
+    
+    toastBody.textContent = message;
+    
+    // Update styling based on type
+    if (type === 'success') {
+        toastHeader.style.borderBottom = '1px solid #4caf50';
+    } else if (type === 'error') {
+        toastHeader.style.borderBottom = '1px solid #ff6666';
+    } else {
+        toastHeader.style.borderBottom = '1px solid var(--neon-blue)';
+    }
+    
+    const toast = new bootstrap.Toast(toastEl);
+    toast.show();
+}
+
+async function loadExistingVersions() {
+    try {
+        const response = await fetch('/api/software/versions');
+        const versions = await response.json();
+        
+        versions.forEach(version => {
+            const controller = version.controller_name;
+            versionData[controller] = version;
+            
+            // Populate form fields
+            document.getElementById(`version-${controller}`).value = version.version;
+            document.getElementById(`notes-${controller}`).value = version.release_notes || '';
+            
+            // Update UI based on publish status
+            if (version.is_published) {
+                document.getElementById(`status-${controller}`).textContent = 'Published';
+                document.getElementById(`status-${controller}`).className = 'badge bg-success';
+                document.getElementById(`publish-${controller}`).style.display = 'none';
+                document.getElementById(`unpublish-${controller}`).style.display = 'inline-block';
+                document.getElementById(`info-${controller}`).innerHTML = 
+                    `<i class="bi bi-check-circle"></i> Published on ${new Date(version.release_date).toLocaleDateString()}`;
+            } else {
+                document.getElementById(`publish-${controller}`).disabled = false;
+            }
+        });
+    } catch (error) {
+        console.error('Error loading versions:', error);
+    }
+}
+
+async function saveVersion(event, controller) {
+    event.preventDefault();
+    
+    const version = document.getElementById(`version-${controller}`).value;
+    const releaseNotes = document.getElementById(`notes-${controller}`).value;
+    
+    try {
+        const response = await fetch('/api/software/versions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                controller_name: controller,
+                version: version,
+                release_notes: releaseNotes
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showToast(`${controller} version ${version} saved successfully`, 'success');
+            document.getElementById(`publish-${controller}`).disabled = false;
+            document.getElementById(`info-${controller}`).innerHTML = 
+                `<i class="bi bi-check-circle"></i> Saved. Ready to publish.`;
+            
+            // Reload to get updated data
+            await loadExistingVersions();
+        } else {
+            showToast(`Error: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error saving version: ${error.message}`, 'error');
+    }
+}
+
+async function publishVersion(controller) {
+    if (!versionData[controller]) {
+        showToast('Please save the version first', 'error');
+        return;
+    }
+    
+    const version = document.getElementById(`version-${controller}`).value;
+    
+    if (!confirm(`Publish ${controller} version ${version}? All robots will receive this update.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/software/versions/${versionData[controller].id}/publish`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showToast(result.message, 'success');
+            document.getElementById(`status-${controller}`).textContent = 'Published';
+            document.getElementById(`status-${controller}`).className = 'badge bg-success';
+            document.getElementById(`publish-${controller}`).style.display = 'none';
+            document.getElementById(`unpublish-${controller}`).style.display = 'inline-block';
+            document.getElementById(`info-${controller}`).innerHTML = 
+                `<i class="bi bi-check-circle"></i> Published on ${new Date().toLocaleDateString()}`;
+        } else {
+            showToast(`Error: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error publishing version: ${error.message}`, 'error');
+    }
+}
+
+async function unpublishVersion(controller) {
+    if (!confirm(`Unpublish ${controller}? Robots will no longer receive this version.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/software/versions/${versionData[controller].id}/unpublish`, {
+            method: 'POST'
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showToast(result.message, 'success');
+            document.getElementById(`status-${controller}`).textContent = 'Not Published';
+            document.getElementById(`status-${controller}`).className = 'badge bg-secondary';
+            document.getElementById(`publish-${controller}`).style.display = 'inline-block';
+            document.getElementById(`publish-${controller}`).disabled = false;
+            document.getElementById(`unpublish-${controller}`).style.display = 'none';
+            document.getElementById(`info-${controller}`).innerHTML = 
+                `<i class="bi bi-info-circle"></i> Not published. Click publish to release.`;
+        } else {
+            showToast(`Error: ${result.error}`, 'error');
+        }
+    } catch (error) {
+        showToast(`Error unpublishing version: ${error.message}`, 'error');
+    }
+}
+</script>
+
+<style>
+.form-control-cyber {
+    background: rgba(0, 20, 40, 0.6);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    color: var(--neon-blue);
+    font-family: var(--font-mono);
+}
+
+.form-control-cyber:focus {
+    background: rgba(0, 20, 40, 0.8);
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.3);
+    color: var(--neon-blue);
+}
+
+.form-control-cyber::placeholder {
+    color: rgba(0, 243, 255, 0.3);
+}
+
+.btn-success {
+    background: rgba(76, 175, 80, 0.3);
+    border-color: #4caf50;
+    color: #4caf50;
+}
+
+.btn-success:hover {
+    background: rgba(76, 175, 80, 0.5);
+    border-color: #4caf50;
+    color: #fff;
+}
+
+.btn-warning {
+    background: rgba(255, 193, 7, 0.3);
+    border-color: #ffc107;
+    color: #ffc107;
+}
+
+.btn-warning:hover {
+    background: rgba(255, 193, 7, 0.5);
+    border-color: #ffc107;
+    color: #000;
+}
+</style>
+{% endblock %}

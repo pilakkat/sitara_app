@@ -13,8 +13,11 @@ import os
 from datetime import datetime, timezone
 from threading import Thread, Event
 from dotenv import load_dotenv
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, render_template, request, jsonify
 import sys
+
+# Import client database manager
+from client_database import ClientDatabase
 
 # ============================================================================
 # CONFIGURATION CONSTANTS
@@ -94,23 +97,56 @@ OBSTACLES = [
     {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
 ]
 
-def check_collision(x, y, buffer=COLLISION_BUFFER):
+def check_collision(x, y, obstacles, buffer=COLLISION_BUFFER):
     """Check if position collides with any obstacle"""
-    for obstacle in OBSTACLES:
+    for obstacle in obstacles:
         if (x >= (obstacle['x'] - buffer) and 
             x <= (obstacle['x'] + obstacle['width'] + buffer) and
             y >= (obstacle['y'] - buffer) and 
             y <= (obstacle['y'] + obstacle['height'] + buffer)):
+            print(f"[COLLISION-DEBUG] Position ({x:.1f}, {y:.1f}) collides with {obstacle['name']}")
             return True
     return False
 
-def is_valid_position(x, y):
+def is_valid_position(x, y, obstacles):
     """Check if position is valid (within bounds and no collision)"""
     # Keep robot within safe area (away from edges)
     if x < MAP_SAFE_MIN or x > MAP_SAFE_MAX or y < MAP_SAFE_MIN or y > MAP_SAFE_MAX:
         return False
     # Check obstacle collision
-    return not check_collision(x, y)
+    return not check_collision(x, y, obstacles)
+
+def find_nearest_safe_position(x, y, obstacles):
+    """Find the nearest safe position to the given coordinates
+    
+    This is used when the robot is initialized inside an obstacle (e.g., demo system).
+    Searches outward in a spiral pattern to find the nearest valid position.
+    """
+    # If already valid, return as-is
+    if is_valid_position(x, y, obstacles):
+        return x, y
+    
+    print(f"[COLLISION] Position ({x:.1f}, {y:.1f}) is inside obstacle, finding safe position...")
+    
+    # Try positions in expanding circles around the current position
+    max_search_radius = 50  # Maximum distance to search
+    step = 1  # Search step size
+    
+    for radius in range(1, max_search_radius, step):
+        # Check positions in a circle around the current point
+        for angle in range(0, 360, 15):  # Check every 15 degrees
+            rad = angle * (math.pi / 180)
+            test_x = x + radius * math.cos(rad)
+            test_y = y + radius * math.sin(rad)
+            
+            if is_valid_position(test_x, test_y, obstacles):
+                print(f"[COLLISION] Found safe position at ({test_x:.1f}, {test_y:.1f}), distance: {radius:.1f}")
+                return test_x, test_y
+    
+    # Fallback to center of map if nothing found
+    center_x, center_y = 50.0, 50.0
+    print(f"[COLLISION] No safe position found nearby, using map center ({center_x}, {center_y})")
+    return center_x, center_y
 
 # ============================================================================
 # ENVIRONMENT CONFIGURATION (Module-level initialization for gunicorn safety)
@@ -145,6 +181,35 @@ USERNAME = os.getenv('ROBOT_USERNAME')
 PASSWORD = os.getenv('ROBOT_PASSWORD')
 ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
 UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5001'))
+
+# Try to load credentials from database (overrides .env if available)
+# This ensures that if a user successfully logged in with a new password via retry,
+# the database password takes precedence over the .env file
+try:
+    from client_database import ClientDatabase
+    db = ClientDatabase()
+    if os.path.exists(db.db_path):
+        # Get user from database for this robot
+        robot_data = db.get_robot(ROBOT_ID)
+        if robot_data and robot_data['assigned_user_id']:
+            # Get the user assigned to this robot
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, password FROM user WHERE id = ?', 
+                             (robot_data['assigned_user_id'],))
+                user = cursor.fetchone()
+                if user:
+                    db_username = user['username']
+                    db_password = user['password']
+                    # Override with database credentials
+                    if db_username and db_password:
+                        USERNAME = db_username
+                        PASSWORD = db_password
+                        print(f"[CONFIG] Loaded credentials from database (overriding .env)")
+except Exception as e:
+    # If database doesn't exist or has errors, fall back to .env values
+    print(f"[CONFIG] Could not load from database (using .env): {e}")
+    pass
 
 # Validate configuration
 if not USERNAME or not PASSWORD:
@@ -182,6 +247,12 @@ class RobotClient:
         self.running = False
         self.stop_event = Event()
         
+        # Initialize database
+        self.db = ClientDatabase()
+        
+        # Robot-specific obstacles (fetched from server)
+        self.obstacles = []
+        
         # Robot state
         self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
         self.battery_voltage = BATTERY_NOMINAL_VOLTAGE
@@ -191,8 +262,9 @@ class RobotClient:
         self.cycle_count = 0
         self.is_powered_on = True  # Track power state
         
-        # Software versions for 4 controllers
-        self.versions = {
+        # Load software versions from database (fallback to constants)
+        db_versions = self.db.get_robot_versions(robot_id)
+        self.versions = db_versions if db_versions else {
             'RCPCU': VERSION_RCPCU,
             'RCSPM': VERSION_RCSPM,
             'RCMMC': VERSION_RCMMC,
@@ -207,7 +279,13 @@ class RobotClient:
         self.speed = MOVEMENT_SPEED
         self.current_command = None
         
+        # Authentication state
+        self.authenticated = False
+        self.last_session_check = None
+        self.session_check_interval = 60  # Check session every 60 seconds
+        
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
+        print(f"[ROBOT-{self.robot_id}] Loaded versions from database: {self.versions}")
     
     def login(self):
         """Authenticate with the server"""
@@ -228,20 +306,81 @@ class RobotClient:
                 redirect_location = response.headers.get('Location', '')
                 if 'dashboard' in redirect_location or redirect_location.endswith('/dashboard'):
                     print(f"[ROBOT-{self.robot_id}] ✓ Authenticated as {self.username}")
+                    self.authenticated = True
                     return True
                 else:
                     print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Unexpected redirect to {redirect_location}")
+                    self.authenticated = False
                     return False
             elif response.status_code == 200:
                 # Status 200 means we got the login page back = authentication failed
                 print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Invalid credentials")
+                self.authenticated = False
                 return False
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: HTTP {response.status_code}")
+                self.authenticated = False
                 return False
         except Exception as e:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
+            self.authenticated = False
             return False
+    
+    def retry_authentication(self, new_password):
+        """Retry authentication with a new password"""
+        old_password = self.password
+        self.password = new_password
+        login_success = self.login()
+        
+        # If login is successful, update password in database
+        if login_success and self.db:
+            try:
+                updated = self.db.update_user_password(self.username, new_password)
+                if updated:
+                    print(f"[ROBOT-{self.robot_id}] ✓ Password updated in database for user: {self.username}")
+                else:
+                    print(f"[ROBOT-{self.robot_id}] ⚠ Password update in database failed for user: {self.username}")
+            except Exception as e:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Error updating password in database: {e}")
+        
+        return login_success
+    
+    def check_session_validity(self):
+        """Check if the server session is still valid"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/session/check",
+                timeout=NETWORK_TIMEOUT_DEFAULT
+            )
+            
+            if response.status_code == 200:
+                # Session is valid
+                self.last_session_check = datetime.now(timezone.utc)
+                return True
+            elif response.status_code == 401:
+                # Session expired
+                print(f"[ROBOT-{self.robot_id}] ⚠️ Session expired after 30 minutes of inactivity")
+                self.authenticated = False
+                return False
+            else:
+                # Other error, assume session invalid
+                print(f"[ROBOT-{self.robot_id}] ⚠️ Session check failed with status {response.status_code}")
+                self.authenticated = False
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ✗ Session check error: {e}")
+            # Don't mark as unauthenticated on network errors
+            return None  # Return None to indicate check failed (not necessarily expired)
+    
+    def should_check_session(self):
+        """Determine if it's time to check session validity"""
+        if not self.last_session_check:
+            return True
+        
+        now = datetime.now(timezone.utc)
+        time_since_last_check = (now - self.last_session_check).total_seconds()
+        
+        return time_since_last_check >= self.session_check_interval
     
     def check_software_updates(self):
         """Check for software updates from server"""
@@ -255,12 +394,40 @@ class RobotClient:
                 latest_versions = response.json()
                 self.last_version_check = datetime.now(timezone.utc)
                 
+                # Update database with available versions
+                release_date = latest_versions.get('release_date', '')
+                release_notes_data = latest_versions.get('release_notes', {})
+                
+                updates_available = False
+                for controller in ['RCPCU', 'RCSPM', 'RCMMC', 'RCPMU']:
+                    if controller in latest_versions:
+                        available_version = latest_versions[controller]
+                        release_notes = release_notes_data.get(controller, '')
+                        
+                        # Save to database with robot_id
+                        self.db.update_available_version(
+                            self.robot_id,
+                            controller, 
+                            available_version, 
+                            release_date, 
+                            release_notes
+                        )
+                        
+                        if self.versions[controller] != available_version:
+                            updates_available = True
+                
+                # Update last check timestamp in robot table
+                self.db.update_last_version_check(self.robot_id)
+                
                 print(f"[ROBOT-{self.robot_id}] ✓ Version check completed")
                 print(f"[ROBOT-{self.robot_id}]   Current versions:")
                 for controller, version in self.versions.items():
                     latest = latest_versions.get(controller, 'unknown')
                     status = "✓ UP TO DATE" if version == latest else f"⚠ UPDATE AVAILABLE: {latest}"
                     print(f"[ROBOT-{self.robot_id}]     {controller}: {version} {status}")
+                
+                if updates_available:
+                    print(f"[ROBOT-{self.robot_id}] 🔔 Software updates available! Check the Updates tab.")
                 
                 # Send current versions to server
                 self.send_version_info()
@@ -314,6 +481,35 @@ class RobotClient:
         
         return False
     
+    def fetch_obstacles(self):
+        """Fetch robot-specific obstacles from server"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/obstacles",
+                params={'robot_id': self.robot_id},
+                timeout=NETWORK_TIMEOUT_DEFAULT
+            )
+            
+            if response.status_code == 200:
+                obstacles_data = response.json()
+                self.obstacles = obstacles_data
+                print(f"[ROBOT-{self.robot_id}] ✓ Loaded {len(self.obstacles)} obstacles from server")
+                for obs in self.obstacles:
+                    print(f"[ROBOT-{self.robot_id}]   - {obs['name']}: ({obs['x']}, {obs['y']}) {obs['width']}x{obs['height']}")
+                return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Failed to fetch obstacles: HTTP {response.status_code}")
+                # Fall back to global OBSTACLES if server fetch fails
+                self.obstacles = OBSTACLES
+                print(f"[ROBOT-{self.robot_id}] ⚠ Using default global obstacles as fallback")
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Error fetching obstacles: {e}")
+            # Fall back to global OBSTACLES
+            self.obstacles = OBSTACLES
+            print(f"[ROBOT-{self.robot_id}] ⚠ Using default global obstacles as fallback")
+            return False
+    
     def fetch_last_position(self):
         """Fetch the last known position from the server"""
         try:
@@ -330,6 +526,13 @@ class RobotClient:
                     self.position['y'] = data.get('pos_y', 50.0)
                     self.position['orientation'] = data.get('orientation', 0.0)
                     print(f"[ROBOT-{self.robot_id}] ✓ Restored last position: ({self.position['x']:.1f}, {self.position['y']:.1f}), orientation: {self.position['orientation']:.1f}°")
+                    
+                    # Safety check: If position is inside an obstacle, move to nearest safe position
+                    if not is_valid_position(self.position['x'], self.position['y'], self.obstacles):
+                        safe_x, safe_y = find_nearest_safe_position(self.position['x'], self.position['y'], self.obstacles)
+                        self.position['x'] = safe_x
+                        self.position['y'] = safe_y
+                        print(f"[ROBOT-{self.robot_id}] ⚠ Corrected to safe position: ({safe_x:.1f}, {safe_y:.1f})")
                     
                     # Also restore other state if available
                     if 'battery' in data:
@@ -481,26 +684,38 @@ class RobotClient:
         cmd_type = command.get('command', '').lower()
         print(f"[ROBOT-{self.robot_id}] ← Received command: {cmd_type}")
         
-        if cmd_type == 'move_forward':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_forward'
-        elif cmd_type == 'move_up':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_up'
-        elif cmd_type == 'move_down':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_down'
-        elif cmd_type == 'move_left':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_left'
-        elif cmd_type == 'move_right':
-            self.status = STATUS_MOVING
-            self.motor_load = MOTOR_LOAD_MOVING
-            self.current_command = 'move_right'
+        # For movement commands, validate destination before accepting
+        if cmd_type in ['move_forward', 'move_up', 'move_down', 'move_left', 'move_right']:
+            # Calculate where this command would move us
+            test_x = self.position['x']
+            test_y = self.position['y']
+            
+            if cmd_type == 'move_up':
+                test_y -= self.speed
+            elif cmd_type == 'move_down':
+                test_y += self.speed
+            elif cmd_type == 'move_left':
+                test_x -= self.speed
+            elif cmd_type == 'move_right':
+                test_x += self.speed
+            elif cmd_type == 'move_forward':
+                rad = math.radians(self.position['orientation'])
+                test_x += self.speed * math.cos(rad)
+                test_y += self.speed * math.sin(rad)
+            
+            print(f"[ROBOT-{self.robot_id}] Testing move from ({self.position['x']:.1f}, {self.position['y']:.1f}) to ({test_x:.1f}, {test_y:.1f})")
+            
+            # Validate the destination
+            if is_valid_position(test_x, test_y, self.obstacles):
+                print(f"[ROBOT-{self.robot_id}] ✓ Position valid, accepting command")
+                self.status = STATUS_MOVING
+                self.motor_load = MOTOR_LOAD_MOVING
+                self.current_command = cmd_type
+            else:
+                print(f"[ROBOT-{self.robot_id}] ✗ Command rejected: Would collide at ({test_x:.1f}, {test_y:.1f})")
+                # Reject the command - stay in current state
+                return
+        
         elif cmd_type == 'stop' or cmd_type == 'halt':
             self.status = STATUS_STANDBY
             self.motor_load = MOTOR_LOAD_STANDBY
@@ -543,7 +758,7 @@ class RobotClient:
                 self.position['orientation'] = self.position['orientation'] % 360
             
             # Validate new position against obstacles
-            if is_valid_position(new_x, new_y):
+            if is_valid_position(new_x, new_y, self.obstacles):
                 self.position['x'] = new_x
                 self.position['y'] = new_y
             else:
@@ -579,11 +794,12 @@ class RobotClient:
         
         # Battery warnings - stop movement if critically low
         if self.battery_voltage < BATTERY_CRITICAL_THRESHOLD:
-            # Stop movement but keep current status
+            # Stop movement if battery critically low
             if self.status == STATUS_MOVING:
+                print(f"[ROBOT-{self.robot_id}] Battery critically low ({self.battery_voltage:.2f}V), stopping movement")
                 self.status = STATUS_STANDBY
-            self.motor_load = MOTOR_LOAD_STANDBY
-            self.current_command = None
+                self.motor_load = MOTOR_LOAD_STANDBY
+                self.current_command = None
         
         # Note: cycle_count is NOT incremented here - it only increments on power-on
     
@@ -591,9 +807,14 @@ class RobotClient:
         """Get status string with battery warning appended if battery is low"""
         base_status = self.status
         
-        # Append battery warning if voltage is low
+        # Append battery warning if voltage is low (and not already appended)
         if self.battery_voltage < BATTERY_LOW_THRESHOLD:
-            return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+            if not base_status.endswith(STATUS_BATTERY_LOW_SUFFIX):
+                return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+        else:
+            # Remove battery warning if voltage recovered
+            if base_status.endswith(STATUS_BATTERY_LOW_SUFFIX):
+                return base_status.replace(STATUS_BATTERY_LOW_SUFFIX, '')
         
         return base_status
     
@@ -602,8 +823,23 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] Starting telemetry loop...")
         
         while self.running and not self.stop_event.is_set():
-            self.update_robot_state()
-            self.send_telemetry()
+            # Only send telemetry if authenticated
+            if self.authenticated:
+                # Periodically check session validity
+                if self.should_check_session():
+                    session_valid = self.check_session_validity()
+                    if session_valid == False:  # Explicitly check for False (not None)
+                        print(f"[ROBOT-{self.robot_id}] Session timeout detected. Authentication required.")
+                        # Session expired, wait for re-authentication
+                        time.sleep(TELEMETRY_INTERVAL)
+                        continue
+                
+                self.update_robot_state()
+                self.send_telemetry()
+            else:
+                # If not authenticated, just wait
+                time.sleep(TELEMETRY_INTERVAL)
+                continue
             
             # Check for software updates daily at midnight
             if self.should_check_versions():
@@ -617,30 +853,46 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] Starting command listener...")
         
         while self.running and not self.stop_event.is_set():
-            self.check_commands()
+            # Only check commands if authenticated
+            if self.authenticated:
+                self.check_commands()
             time.sleep(COMMAND_CHECK_INTERVAL)
     
     def start(self):
         """Start the robot client"""
+        # Try initial authentication
         if not self.login():
-            print(f"[ROBOT-{self.robot_id}] Cannot start without authentication")
-            return False
+            print(f"[ROBOT-{self.robot_id}] ⚠️ Authentication failed. Waiting for manual retry from UI...")
+            print(f"[ROBOT-{self.robot_id}] Please enter the correct password in the web interface.")
+            # Don't return False - continue to allow UI access for password retry
         
-        # Fetch last known position from server
-        print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
-        self.fetch_last_position()
-        
-        # Check for software updates during boot sequence
-        print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
-        self.check_software_updates()
-        
+        # Start the robot client even if authentication failed initially
+        # The UI will prompt for password retry
         self.running = True
         
-        # Start telemetry thread
+        # Only fetch position and check updates if authenticated
+        if self.authenticated:
+            # Fetch robot-specific obstacles from server
+            print(f"[ROBOT-{self.robot_id}] Fetching robot-specific obstacles...")
+            self.fetch_obstacles()
+            
+            # Fetch last known position from server
+            print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
+            self.fetch_last_position()
+            
+            # Check for software updates during boot sequence
+            print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
+            self.check_software_updates()
+        else:
+            # If not authenticated, use fallback global obstacles
+            self.obstacles = OBSTACLES
+            print(f"[ROBOT-{self.robot_id}] ⚠ Not authenticated, using default global obstacles")
+        
+        # Start telemetry thread (will only send if authenticated)
         telemetry_thread = Thread(target=self.run_telemetry_loop, daemon=True)
         telemetry_thread.start()
         
-        # Start command listener thread
+        # Start command listener thread (will only listen if authenticated)
         command_thread = Thread(target=self.run_command_loop, daemon=True)
         command_thread.start()
         
@@ -666,453 +918,55 @@ class RobotClient:
 @control_app.route('/')
 def index():
     """Serve the control interface"""
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>SITARA Robot Client Control</title>
-        <meta charset="UTF-8">
-        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
-        <style>
-            :root {
-                --bg-dark: #000000;
-                --neon-blue: #00f3ff;
-                --neon-purple: #bc13fe;
-                --dim-blue: #45a29e;
-                --text-main: #ffffff;
-                --text-secondary: #e0e0e0;
-                --text-muted: #b0b0b0;
-                --font-head: 'Orbitron', sans-serif;
-                --font-body: 'Roboto', sans-serif;
-                --glass-bg: rgba(20, 20, 30, 0.75);
-                --glass-border: rgba(0, 243, 255, 0.2);
-                --glass-blur: 15px;
-            }
-            
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                font-family: var(--font-body);
-                background: var(--bg-dark);
-                background-image: radial-gradient(circle at 20% 50%, rgba(0, 243, 255, 0.05) 0%, transparent 50%),
-                                  radial-gradient(circle at 80% 80%, rgba(188, 19, 254, 0.05) 0%, transparent 50%);
-                color: var(--text-main);
-                padding: 20px;
-                min-height: 100vh;
-            }
-            .container {
-                max-width: 900px;
-                margin: 0 auto;
-                background: var(--glass-bg);
-                backdrop-filter: blur(var(--glass-blur));
-                border: 1px solid var(--glass-border);
-                border-radius: 20px;
-                padding: 30px;
-                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-            }
-            h1 {
-                text-align: center;
-                margin-bottom: 10px;
-                font-size: 2.5em;
-                font-family: var(--font-head);
-                color: var(--neon-blue);
-                text-shadow: 0 0 20px rgba(0, 243, 255, 0.5);
-            }
-            .robot-id {
-                text-align: center;
-                font-size: 1.2em;
-                color: var(--text-secondary);
-                margin-bottom: 30px;
-            }
-            .section {
-                background: rgba(0, 0, 0, 0.3);
-                border: 1px solid rgba(0, 243, 255, 0.2);
-                border-radius: 15px;
-                padding: 20px;
-                margin-bottom: 20px;
-            }
-            .section h2 {
-                margin-bottom: 15px;
-                font-size: 1.5em;
-                font-family: var(--font-head);
-                color: var(--neon-blue);
-                border-bottom: 2px solid rgba(0, 243, 255, 0.3);
-                padding-bottom: 10px;
-            }
-            .control-grid {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 10px;
-                max-width: 300px;
-                margin: 0 auto;
-            }
-            .controls-row {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: 30px;
-                margin: 20px 0;
-            }
-            .control-panel {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-            }
-            .sliders-container {
-                display: flex;
-                gap: 40px;
-                justify-content: center;
-                align-items: center;
-                min-height: 250px;
-            }
-            .vertical-slider-group {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 15px;
-            }
-            .slider-label {
-                text-align: center;
-                font-size: 0.95em;
-                color: var(--text-muted);
-            }
-            .slider-value {
-                font-size: 1.3em;
-                font-weight: bold;
-                color: var(--neon-blue);
-                margin-bottom: 10px;
-            }
-            .vertical-slider {
-                writing-mode: bt-lr; /* IE */
-                -webkit-appearance: slider-vertical; /* WebKit */
-                width: 8px;
-                height: 200px;
-                padding: 0;
-                margin: 0;
-                border-radius: 5px;
-                background: rgba(0, 243, 255, 0.2);
-                outline: none;
-            }
-            .vertical-slider::-webkit-slider-thumb {
-                -webkit-appearance: none;
-                appearance: none;
-                width: 25px;
-                height: 25px;
-                border-radius: 50%;
-                background: var(--neon-blue);
-                cursor: pointer;
-                box-shadow: 0 0 10px var(--neon-blue);
-            }
-            .vertical-slider::-moz-range-thumb {
-                width: 25px;
-                height: 25px;
-                border-radius: 50%;
-                background: var(--neon-blue);
-                cursor: pointer;
-                border: none;
-                box-shadow: 0 0 10px var(--neon-blue);
-            }
-            .btn {
-                background: rgba(0, 243, 255, 0.1);
-                border: 1px solid var(--neon-blue);
-                color: var(--neon-blue);
-                padding: 15px;
-                border-radius: 10px;
-                cursor: pointer;
-                font-size: 1.1em;
-                font-weight: bold;
-                font-family: var(--font-head);
-                transition: all 0.3s;
-                text-align: center;
-            }
-            .btn:hover {
-                background: var(--neon-blue);
-                color: #000;
-                transform: translateY(-2px);
-                box-shadow: 0 0 20px var(--neon-blue);
-            }
-            .btn:active {
-                transform: translateY(0);
-            }
-            .btn:disabled {
-                opacity: 0.3;
-                cursor: not-allowed;
-                pointer-events: none;
-            }
-            .btn-special {
-                background: rgba(255, 100, 100, 0.1);
-                border-color: rgba(255, 100, 100, 0.8);
-                color: rgba(255, 150, 150, 1);
-            }
-            .btn-special:hover {
-                background: rgba(255, 100, 100, 0.3);
-                color: #fff;
-            }
-            .btn-charge {
-                background: rgba(100, 255, 100, 0.1);
-                border-color: rgba(100, 255, 100, 0.8);
-                color: rgba(100, 255, 100, 1);
-            }
-            .btn-charge:hover {
-                background: rgba(100, 255, 100, 0.3);
-                color: #000;
-            }
-            .status-display {
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 15px;
-                margin-top: 20px;
-            }
-            .status-item {
-                background: rgba(0, 0, 0, 0.4);
-                border: 1px solid rgba(0, 243, 255, 0.2);
-                padding: 15px;
-                border-radius: 10px;
-                text-align: center;
-            }
-            .status-label {
-                font-size: 0.9em;
-                color: var(--text-muted);
-                margin-bottom: 5px;
-            }
-            .status-value {
-                font-size: 1.5em;
-                font-weight: bold;
-            }
-            .special-ops {
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 10px;
-                margin-top: 15px;
-            }
-            .message {
-                text-align: center;
-                padding: 10px;
-                margin-top: 15px;
-                border-radius: 8px;
-                background: rgba(255, 255, 255, 0.2);
-                display: none;
-            }
-            .message.show {
-                display: block;
-            }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>🤖 SITARA ROBOT CONTROL</h1>
-            <div class="robot-id">Robot ID: <span id="robotId">Loading...</span></div>
-            
-            <div class="controls-row">
-                <div class="control-panel">
-                    <h2>📍 Position Control</h2>
-                    <div class="control-grid">
-                        <div></div>
-                        <button class="btn" id="upBtn" onclick="moveDirection('up')">▲<br>UP</button>
-                        <div></div>
-                        <button class="btn" id="leftBtn" onclick="moveDirection('left')">◀<br>LEFT</button>
-                        <div></div>
-                        <button class="btn" id="rightBtn" onclick="moveDirection('right')">▶<br>RIGHT</button>
-                        <div></div>
-                        <button class="btn" id="downBtn" onclick="moveDirection('down')">▼<br>DOWN</button>
-                        <div></div>
-                    </div>
-                </div>
-                
-                <div class="control-panel">
-                    <h2>⚡ System Parameters</h2>
-                    <div class="sliders-container">
-                        <div class="vertical-slider-group">
-                            <div class="slider-label">Battery Voltage</div>
-                            <div class="slider-value" id="voltageValue">24.5V</div>
-                            <input type="range" class="vertical-slider" id="voltageSlider" 
-                                   min="22" max="25.2" step="0.1" value="24.5"
-                                   orient="vertical"
-                                   oninput="updateVoltage(this.value)">
-                        </div>
-                        <div class="vertical-slider-group">
-                            <div class="slider-label">Temperature</div>
-                            <div class="slider-value" id="tempValue">45°C</div>
-                            <input type="range" class="vertical-slider" id="tempSlider" 
-                                   min="35" max="85" step="1" value="45"
-                                   orient="vertical"
-                                   oninput="updateTemperature(this.value)">
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>🔧 Special Operations</h2>
-                <div class="special-ops">
-                    <button class="btn btn-charge" onclick="specialOp('charging')">🔋 CHARGING</button>
-                    <button class="btn btn-special" id="powerBtn" onclick="togglePower()">⏻ POWER</button>
-                    <button class="btn btn-special" onclick="specialOp('fault')">⚠️ FAULT</button>
-                    <button class="btn" id="standbyBtn" onclick="specialOp('standby')">⏸️ STANDBY</button>
-                    <button class="btn" id="movingBtn" onclick="specialOp('moving')">▶️ MOVING</button>
-                    <button class="btn" id="scanningBtn" onclick="specialOp('scanning')">🔍 SCANNING</button>
-                </div>
-            </div>
-            
-            <div class="section">
-                <h2>📊 Current Status</h2>
-                <div class="status-display">
-                    <div class="status-item">
-                        <div class="status-label">Position</div>
-                        <div class="status-value" id="positionValue">50, 50</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Orientation</div>
-                        <div class="status-value" id="orientationValue">0°</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Battery</div>
-                        <div class="status-value" id="batteryValue">24.5V</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Temperature</div>
-                        <div class="status-value" id="temperatureValue">45°C</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Status</div>
-                        <div class="status-value" id="statusValue">STANDBY</div>
-                    </div>
-                    <div class="status-item">
-                        <div class="status-label">Cycle Count</div>
-                        <div class="status-value" id="cyclesValue">0</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="message" id="message"></div>
-        </div>
-        
-        <script>
-            function showMessage(text) {
-                const msg = document.getElementById('message');
-                msg.textContent = text;
-                msg.classList.add('show');
-                setTimeout(() => msg.classList.remove('show'), 3000);
-            }
-            
-            function moveDirection(dir) {
-                fetch('/api/control/move', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({direction: dir})
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        showMessage('Position updated: ' + dir.toUpperCase());
-                        updateStatus();
-                    }
-                });
-            }
-            
-            function updateVoltage(value) {
-                document.getElementById('voltageValue').textContent = value + 'V';
-                fetch('/api/control/voltage', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({voltage: parseFloat(value)})
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) updateStatus();
-                });
-            }
-            
-            function updateTemperature(value) {
-                document.getElementById('tempValue').textContent = value + '°C';
-                fetch('/api/control/temperature', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({temperature: parseInt(value)})
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) updateStatus();
-                });
-            }
-            
-            function specialOp(operation) {
-                fetch('/api/control/operation', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({operation: operation})
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        showMessage('Operation: ' + operation.toUpperCase());
-                        updateStatus();
-                    }
-                });
-            }
-            
-            function togglePower() {
-                fetch('/api/control/power', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'}
-                })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success) {
-                        showMessage(data.is_powered_on ? 'BOOTING...' : 'POWERED OFF');
-                        updateStatus();
-                    }
-                });
-            }
-            
-            function setButtonsEnabled(enabled) {
-                // Position buttons
-                ['upBtn', 'downBtn', 'leftBtn', 'rightBtn'].forEach(id => {
-                    document.getElementById(id).disabled = !enabled;
-                });
-                // Operation buttons
-                ['standbyBtn', 'movingBtn', 'scanningBtn'].forEach(id => {
-                    document.getElementById(id).disabled = !enabled;
-                });
-            }
-            
-            function updateStatus() {
-                fetch('/api/control/status')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('robotId').textContent = data.robot_id;
-                    document.getElementById('positionValue').textContent = 
-                        data.position.x.toFixed(1) + ', ' + data.position.y.toFixed(1);
-                    document.getElementById('orientationValue').textContent = 
-                        data.position.orientation.toFixed(1) + '°';
-                    document.getElementById('batteryValue').textContent = 
-                        data.battery_voltage.toFixed(2) + 'V';
-                    document.getElementById('temperatureValue').textContent = 
-                        data.temperature.toFixed(1) + '°C';
-                    document.getElementById('statusValue').textContent = data.status;
-                    document.getElementById('cyclesValue').textContent = data.cycle_count;
-                    
-                    // Update sliders
-                    document.getElementById('voltageSlider').value = data.battery_voltage;
-                    document.getElementById('tempSlider').value = data.temperature;
-                    
-                    // Enable/disable buttons based on power state
-                    setButtonsEnabled(data.is_powered_on);
-                });
-            }
-            
-            // Update status every 5 seconds
-            setInterval(updateStatus, 5000);
-            updateStatus();
-        </script>
-    </body>
-    </html>
-    """
-    return html
+    return render_template('control.html')
+
+@control_app.route('/api/auth/status')
+def auth_status():
+    """Check authentication status"""
+    if robot_client:
+        return jsonify({
+            'authenticated': robot_client.authenticated,
+            'username': robot_client.username,
+            'robot_id': robot_client.robot_id
+        })
+    return jsonify({'authenticated': False, 'error': 'Robot not initialized'}), 500
+
+@control_app.route('/api/auth/retry', methods=['POST'])
+def auth_retry():
+    """Retry authentication with new password"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    data = request.json
+    new_password = data.get('password', '')
+    
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Password required'}), 400
+    
+    # Attempt authentication with new password
+    success = robot_client.retry_authentication(new_password)
+    
+    if success:
+        # Fetch obstacles, position, and check updates after successful authentication
+        robot_client.fetch_obstacles()
+        robot_client.fetch_last_position()
+        robot_client.check_software_updates()
+        return jsonify({
+            'success': True,
+            'message': f'Authenticated as {robot_client.username}'
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials. Please try again.'
+        }), 401
 
 @control_app.route('/api/control/status')
 def get_status():
     """Get current robot status"""
     if robot_client:
         return jsonify({
+            'authenticated': robot_client.authenticated,
             'robot_id': robot_client.robot_id,
             'position': robot_client.position,
             'battery_voltage': robot_client.battery_voltage,
@@ -1130,29 +984,50 @@ def control_move():
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
     
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
     data = request.json
     direction = data.get('direction', '')
     step = 2.0  # Slower step changes
     
-    if direction == 'up':
-        robot_client.position['y'] = max(0, robot_client.position['y'] - step)  # UP decreases Y
-    elif direction == 'down':
-        robot_client.position['y'] = min(100, robot_client.position['y'] + step)  # DOWN increases Y
-    elif direction == 'left':
-        robot_client.position['x'] = max(0, robot_client.position['x'] - step)
-    elif direction == 'right':
-        robot_client.position['x'] = min(100, robot_client.position['x'] + step)
-    elif direction == 'center':
-        robot_client.position['x'] = 50.0
-        robot_client.position['y'] = 50.0
+    # Calculate new position
+    new_x = robot_client.position['x']
+    new_y = robot_client.position['y']
     
-    return jsonify({'success': True})
+    if direction == 'up':
+        new_y = max(0, robot_client.position['y'] - step)  # UP decreases Y
+    elif direction == 'down':
+        new_y = min(100, robot_client.position['y'] + step)  # DOWN increases Y
+    elif direction == 'left':
+        new_x = max(0, robot_client.position['x'] - step)
+    elif direction == 'right':
+        new_x = min(100, robot_client.position['x'] + step)
+    elif direction == 'center':
+        new_x = 50.0
+        new_y = 50.0
+    
+    # Validate new position against obstacles before updating
+    if is_valid_position(new_x, new_y, robot_client.obstacles):
+        robot_client.position['x'] = new_x
+        robot_client.position['y'] = new_y
+        return jsonify({'success': True})
+    else:
+        # Position would collide with obstacle
+        return jsonify({
+            'success': False, 
+            'error': 'Collision detected',
+            'message': f'Cannot move to ({new_x:.1f}, {new_y:.1f}) - obstacle in the way'
+        }), 400
 
 @control_app.route('/api/control/voltage', methods=['POST'])
 def control_voltage():
     """Control battery voltage"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     data = request.json
     voltage = data.get('voltage', 24.5)
@@ -1166,6 +1041,9 @@ def control_temperature():
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
     
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
     data = request.json
     temp = data.get('temperature', 45)
     robot_client.temperature = max(35, min(85, temp))
@@ -1177,6 +1055,9 @@ def control_operation():
     """Control special operations"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     data = request.json
     operation = data.get('operation', '').lower()
@@ -1204,6 +1085,9 @@ def control_power():
     """Toggle power on/off"""
     if not robot_client:
         return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
     if robot_client.is_powered_on:
         # Turning OFF
@@ -1238,6 +1122,128 @@ def control_power():
         threading.Thread(target=transition_to_standby, daemon=True).start()
     
     return jsonify({'success': True, 'is_powered_on': robot_client.is_powered_on})
+
+@control_app.route('/api/versions/check', methods=['POST'])
+def check_versions():
+    """Manually trigger version check"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        latest_versions = robot_client.check_software_updates()
+        pending_updates = robot_client.db.get_pending_updates(robot_client.robot_id)
+        
+        return jsonify({
+            'success': True,
+            'latest_versions': latest_versions,
+            'pending_updates': [{
+                'component': update['component'],
+                'current': update['current_version'],
+                'available': update['available_version'],
+                'notes': update['release_notes']
+            } for update in pending_updates]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@control_app.route('/api/versions/status')
+def get_version_status():
+    """Get current version status and available updates"""
+    if not robot_client:
+        return jsonify({'error': 'Robot not initialized'}), 500
+    
+    try:
+        current_versions = robot_client.versions
+        all_versions = robot_client.db.get_all_software_versions()
+        pending_updates = robot_client.db.get_pending_updates(robot_client.robot_id)
+        
+        return jsonify({
+            'current_versions': current_versions,
+            'available_updates': [{
+                'component': update['component'],
+                'current_version': update['current_version'],
+                'available_version': update['available_version'],
+                'release_notes': update['release_notes']
+            } for update in pending_updates],
+            'version_history': [{
+                'component': row['component'],
+                'old_version': row['old_version'],
+                'new_version': row['new_version'],
+                'updated_at': row['updated_at']
+            } for row in robot_client.db.get_version_history(robot_client.robot_id, 5)]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@control_app.route('/api/versions/update', methods=['POST'])
+def apply_update():
+    """Apply software update for a component"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    # Check if robot is powered on
+    if not robot_client.is_powered_on:
+        return jsonify({'success': False, 'error': 'Robot is powered OFF. Cannot update while powered down.'}), 400
+    
+    # Check if robot is in safe state (not moving/scanning)
+    safe_states = [STATUS_STANDBY, STATUS_CHARGING]
+    current_status = robot_client.status.replace(STATUS_BATTERY_LOW_SUFFIX, '')  # Remove battery warning
+    
+    if current_status not in safe_states:
+        return jsonify({
+            'success': False, 
+            'error': f'Robot must be in STANDBY or CHARGING state. Current state: {current_status}'
+        }), 400
+    
+    data = request.json
+    component = data.get('component')
+    
+    if not component:
+        return jsonify({'success': False, 'error': 'Component required'}), 400
+    
+    try:
+        # Get available version from database
+        version_info = robot_client.db.get_software_version(component)
+        if not version_info or not version_info['available_version']:
+            return jsonify({'success': False, 'error': 'No update available'}), 400
+        
+        new_version = version_info['available_version']
+        old_version = version_info['current_version']
+        
+        # Apply update in database
+        success = robot_client.db.apply_software_update(
+            robot_client.robot_id, 
+            component, 
+            new_version
+        )
+        
+        if success:
+            # Update in-memory version
+            robot_client.versions[component] = new_version
+            
+            # Send updated version to server
+            robot_client.send_version_info()
+            
+            print(f"[ROBOT-{robot_client.robot_id}] ✓ Updated {component} from {old_version} to {new_version}")
+            
+            return jsonify({
+                'success': True,
+                'component': component,
+                'old_version': old_version,
+                'new_version': new_version,
+                'message': f'Successfully updated {component} to {new_version}'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Update failed'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def run_control_interface(port):
     """Run the Flask control interface"""

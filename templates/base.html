@@ -22,10 +22,41 @@
             </a>
                 <div class="d-flex align-items-center gap-3">
                     {% if current_user.is_authenticated %}
-                    <span class="navbar-text mb-0">OP: {{ current_user.username }}</span>
-                        <a href="{{ url_for('logout') }}" class="btn btn-sm btn-logout">
-                            <i class="bi bi-box-arrow-right me-1"></i> LOGOUT
-                        </a>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-cyber dropdown-toggle d-flex align-items-center gap-2" type="button" id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-person-circle"></i>
+                            <span>{{ current_user.username }}</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown" style="background: rgba(10, 10, 30, 0.95); border: 1px solid var(--neon-blue); box-shadow: 0 0 20px rgba(0, 243, 255, 0.3);">
+                            {% if current_user.username == 'admin' %}
+                            <li>
+                                <h6 class="dropdown-header" style="color: var(--neon-blue); font-family: var(--font-head); font-size: 0.7rem; opacity: 0.7;">ADMIN</h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('dashboard') }}" style="color: var(--neon-blue); transition: all 0.3s ease;">
+                                    <i class="bi bi-speedometer2"></i> Dashboard
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('software_management') }}" style="color: var(--neon-blue); transition: all 0.3s ease;">
+                                    <i class="bi bi-cpu"></i> Software Management
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider" style="border-color: rgba(0, 243, 255, 0.3);"></li>
+                            {% endif %}
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('change_password') }}" style="color: var(--neon-blue); transition: all 0.3s ease;">
+                                    <i class="bi bi-key"></i> Change Password
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider" style="border-color: rgba(0, 243, 255, 0.3);"></li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('logout') }}" style="color: #ff6666; transition: all 0.3s ease;">
+                                    <i class="bi bi-box-arrow-right"></i> Logout
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                     {% elif request.endpoint != 'login' %}
                         <a href="{{ url_for('login') }}" class="btn btn-sm btn-cyber">LOGIN</a>
                     {% endif %}
@@ -43,5 +74,16 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <style>
+        .dropdown-menu .dropdown-item:hover {
+            background: rgba(0, 243, 255, 0.1);
+            color: #fff !important;
+        }
+        
+        .dropdown-menu .dropdown-item:active {
+            background: rgba(0, 243, 255, 0.2);
+        }
+    </style>
 </body>
 </html>
