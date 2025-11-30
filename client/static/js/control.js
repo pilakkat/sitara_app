@@ -260,6 +260,126 @@ function updateStatus() {
     });
 }
 
+// Software Update Functions
+function checkForUpdates() {
+    const container = document.getElementById('updatesContainer');
+    container.innerHTML = '<p class="text-muted">⏳ Checking for updates...</p>';
+    
+    fetch('/api/versions/check', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data.success) {
+            displayUpdates(data.pending_updates);
+            if (data.pending_updates.length > 0) {
+                showMessage(`Found ${data.pending_updates.length} update(s) available`);
+            } else {
+                showMessage('✓ All software is up to date');
+            }
+        } else {
+            container.innerHTML = `<p class="text-muted">❌ Error: ${data.error}</p>`;
+        }
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Update check error:', error);
+            container.innerHTML = '<p class="text-muted">❌ Failed to check for updates</p>';
+        }
+    });
+}
+
+function displayUpdates(updates) {
+    const container = document.getElementById('updatesContainer');
+    
+    if (updates.length === 0) {
+        container.innerHTML = '<p class="text-muted">✓ All controllers are running the latest software versions</p>';
+        return;
+    }
+    
+    let html = '';
+    updates.forEach(update => {
+        html += `
+            <div class="update-item" id="update-${update.component}">
+                <div class="update-header">
+                    <div class="update-component">${update.component}</div>
+                    <div class="update-versions">
+                        ${update.current} <span class="version-arrow">→</span> ${update.available}
+                    </div>
+                </div>
+                <div class="update-notes">${update.notes || 'No release notes available'}</div>
+                <div class="update-actions">
+                    <button class="btn btn-update" onclick="installUpdate('${update.component}')">
+                        📥 INSTALL UPDATE
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function installUpdate(component) {
+    const updateItem = document.getElementById(`update-${component}`);
+    const btn = updateItem.querySelector('.btn-update');
+    
+    btn.disabled = true;
+    btn.textContent = '⏳ INSTALLING...';
+    
+    fetch('/api/versions/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({component: component})
+    })
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
+    .then(data => {
+        if (data.success) {
+            updateItem.classList.add('update-success');
+            updateItem.innerHTML = `
+                <div class="update-header">
+                    <div class="update-component">✓ ${data.component}</div>
+                    <div class="update-versions">
+                        ${data.old_version} <span class="version-arrow">→</span> ${data.new_version}
+                    </div>
+                </div>
+                <div class="update-notes" style="color: #00ff00;">
+                    ${data.message}
+                </div>
+            `;
+            showMessage(`✓ ${component} updated successfully!`);
+            
+            // Refresh status to show new version
+            setTimeout(updateStatus, 1000);
+        } else {
+            btn.disabled = false;
+            btn.textContent = '📥 INSTALL UPDATE';
+            showMessage(`❌ Update failed: ${data.error}`);
+        }
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Update error:', error);
+            btn.disabled = false;
+            btn.textContent = '📥 INSTALL UPDATE';
+            showMessage('❌ Update installation failed');
+        }
+    });
+}
+
 // Check authentication on page load
 checkAuthentication();
 

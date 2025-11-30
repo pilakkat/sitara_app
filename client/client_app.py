@@ -16,6 +16,9 @@ from dotenv import load_dotenv
 from flask import Flask, render_template_string, render_template, request, jsonify
 import sys
 
+# Import client database manager
+from client_database import ClientDatabase
+
 # ============================================================================
 # CONFIGURATION CONSTANTS
 # ============================================================================
@@ -182,6 +185,9 @@ class RobotClient:
         self.running = False
         self.stop_event = Event()
         
+        # Initialize database
+        self.db = ClientDatabase()
+        
         # Robot state
         self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
         self.battery_voltage = BATTERY_NOMINAL_VOLTAGE
@@ -191,8 +197,9 @@ class RobotClient:
         self.cycle_count = 0
         self.is_powered_on = True  # Track power state
         
-        # Software versions for 4 controllers
-        self.versions = {
+        # Load software versions from database (fallback to constants)
+        db_versions = self.db.get_robot_versions(robot_id)
+        self.versions = db_versions if db_versions else {
             'RCPCU': VERSION_RCPCU,
             'RCSPM': VERSION_RCSPM,
             'RCMMC': VERSION_RCMMC,
@@ -213,6 +220,7 @@ class RobotClient:
         self.session_check_interval = 60  # Check session every 60 seconds
         
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
+        print(f"[ROBOT-{self.robot_id}] Loaded versions from database: {self.versions}")
     
     def login(self):
         """Authenticate with the server"""
@@ -307,12 +315,39 @@ class RobotClient:
                 latest_versions = response.json()
                 self.last_version_check = datetime.now(timezone.utc)
                 
+                # Update database with available versions
+                release_date = latest_versions.get('release_date', '')
+                release_notes_data = latest_versions.get('release_notes', {})
+                
+                updates_available = False
+                for controller in ['RCPCU', 'RCSPM', 'RCMMC', 'RCPMU']:
+                    if controller in latest_versions:
+                        available_version = latest_versions[controller]
+                        release_notes = release_notes_data.get(controller, '')
+                        
+                        # Save to database
+                        self.db.update_available_version(
+                            controller, 
+                            available_version, 
+                            release_date, 
+                            release_notes
+                        )
+                        
+                        if self.versions[controller] != available_version:
+                            updates_available = True
+                
+                # Update last check timestamp in robot table
+                self.db.update_last_version_check(self.robot_id)
+                
                 print(f"[ROBOT-{self.robot_id}] ✓ Version check completed")
                 print(f"[ROBOT-{self.robot_id}]   Current versions:")
                 for controller, version in self.versions.items():
                     latest = latest_versions.get(controller, 'unknown')
                     status = "✓ UP TO DATE" if version == latest else f"⚠ UPDATE AVAILABLE: {latest}"
                     print(f"[ROBOT-{self.robot_id}]     {controller}: {version} {status}")
+                
+                if updates_available:
+                    print(f"[ROBOT-{self.robot_id}] 🔔 Software updates available! Check the Updates tab.")
                 
                 # Send current versions to server
                 self.send_version_info()
@@ -929,6 +964,114 @@ def control_power():
         threading.Thread(target=transition_to_standby, daemon=True).start()
     
     return jsonify({'success': True, 'is_powered_on': robot_client.is_powered_on})
+
+@control_app.route('/api/versions/check', methods=['POST'])
+def check_versions():
+    """Manually trigger version check"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    try:
+        latest_versions = robot_client.check_software_updates()
+        pending_updates = robot_client.db.get_pending_updates()
+        
+        return jsonify({
+            'success': True,
+            'latest_versions': latest_versions,
+            'pending_updates': [{
+                'component': row['component'],
+                'current': row['current_version'],
+                'available': row['available_version'],
+                'notes': row['release_notes']
+            } for row in pending_updates]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@control_app.route('/api/versions/status')
+def get_version_status():
+    """Get current version status and available updates"""
+    if not robot_client:
+        return jsonify({'error': 'Robot not initialized'}), 500
+    
+    try:
+        current_versions = robot_client.versions
+        all_versions = robot_client.db.get_all_software_versions()
+        pending_updates = robot_client.db.get_pending_updates()
+        
+        return jsonify({
+            'current_versions': current_versions,
+            'available_updates': [{
+                'component': row['component'],
+                'current_version': row['current_version'],
+                'available_version': row['available_version'],
+                'release_date': row['release_date'],
+                'release_notes': row['release_notes']
+            } for row in pending_updates],
+            'version_history': [{
+                'component': row['component'],
+                'old_version': row['old_version'],
+                'new_version': row['new_version'],
+                'updated_at': row['updated_at']
+            } for row in robot_client.db.get_version_history(robot_client.robot_id, 5)]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@control_app.route('/api/versions/update', methods=['POST'])
+def apply_update():
+    """Apply software update for a component"""
+    if not robot_client:
+        return jsonify({'success': False, 'error': 'Robot not initialized'}), 500
+    
+    if not robot_client.authenticated:
+        return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+    
+    data = request.json
+    component = data.get('component')
+    
+    if not component:
+        return jsonify({'success': False, 'error': 'Component required'}), 400
+    
+    try:
+        # Get available version from database
+        version_info = robot_client.db.get_software_version(component)
+        if not version_info or not version_info['available_version']:
+            return jsonify({'success': False, 'error': 'No update available'}), 400
+        
+        new_version = version_info['available_version']
+        
+        # Apply update in database
+        success = robot_client.db.apply_software_update(
+            robot_client.robot_id, 
+            component, 
+            new_version
+        )
+        
+        if success:
+            # Update in-memory version
+            robot_client.versions[component] = new_version
+            
+            # Send updated version to server
+            robot_client.send_version_info()
+            
+            print(f"[ROBOT-{robot_client.robot_id}] ✓ Updated {component} to {new_version}")
+            
+            return jsonify({
+                'success': True,
+                'component': component,
+                'old_version': version_info['current_version'],
+                'new_version': new_version,
+                'message': f'Successfully updated {component} to {new_version}'
+            })
+        else:
+            return jsonify({'success': False, 'error': 'Update failed'}), 500
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 def run_control_interface(port):
     """Run the Flask control interface"""

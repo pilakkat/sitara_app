@@ -392,3 +392,106 @@ h1 {
 .message.show {
     display: block;
 }
+
+/* Software Updates Section */
+.version-controls {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+.updates-display {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    padding: 15px;
+    min-height: 100px;
+}
+
+.update-item {
+    background: rgba(0, 243, 255, 0.05);
+    border: 1px solid var(--neon-blue);
+    border-radius: 6px;
+    padding: 15px;
+    margin-bottom: 15px;
+    transition: all 0.3s ease;
+}
+
+.update-item:hover {
+    background: rgba(0, 243, 255, 0.1);
+    box-shadow: 0 0 15px rgba(0, 243, 255, 0.3);
+}
+
+.update-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.update-component {
+    font-size: 1.2em;
+    font-weight: 700;
+    color: var(--neon-blue);
+    font-family: var(--font-head);
+}
+
+.update-versions {
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.version-arrow {
+    margin: 0 8px;
+    color: var(--neon-purple);
+}
+
+.update-notes {
+    color: var(--text-secondary);
+    font-size: 0.95em;
+    margin: 10px 0;
+    line-height: 1.4;
+}
+
+.update-actions {
+    margin-top: 10px;
+    text-align: right;
+}
+
+.btn-update {
+    background: linear-gradient(135deg, var(--neon-purple), #8b00ff);
+    padding: 8px 20px;
+    font-size: 0.95em;
+}
+
+.btn-update:hover {
+    box-shadow: 0 4px 20px rgba(188, 19, 254, 0.5);
+}
+
+.text-muted {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 20px;
+}
+
+.update-success {
+    background: rgba(0, 255, 0, 0.1);
+    border-color: #00ff00;
+}
+
+.version-history {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.version-history-title {
+    font-size: 0.9em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.history-item {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    padding: 4px 0;
+}
