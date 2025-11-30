@@ -73,8 +73,13 @@ function checkAuthentication() {
     })
     .catch(error => {
         console.error('Auth check error:', error);
+        // If we get a network error, check if it's an auth issue
+        showAuthModal();
     });
 }
+
+// Check authentication status every 60 seconds (session timeout check)
+setInterval(checkAuthentication, 60000);
 
 function moveDirection(dir) {
     fetch('/api/control/move', {
@@ -82,11 +87,24 @@ function moveDirection(dir) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({direction: dir})
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) {
             showMessage('Position updated: ' + dir.toUpperCase());
             updateStatus();
+        } else if (data.error) {
+            showMessage('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Move error:', error);
         }
     });
 }
@@ -98,9 +116,20 @@ function updateVoltage(value) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({voltage: parseFloat(value)})
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) updateStatus();
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Voltage error:', error);
+        }
     });
 }
 
@@ -111,9 +140,20 @@ function updateTemperature(value) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({temperature: parseInt(value)})
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) updateStatus();
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Temperature error:', error);
+        }
     });
 }
 
@@ -123,11 +163,22 @@ function specialOp(operation) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({operation: operation})
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) {
             showMessage('Operation: ' + operation.toUpperCase());
             updateStatus();
+        }
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Operation error:', error);
         }
     });
 }
@@ -137,11 +188,22 @@ function togglePower() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'}
     })
-    .then(r => r.json())
+    .then(r => {
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         if (data.success) {
             showMessage(data.is_powered_on ? 'BOOTING...' : 'POWERED OFF');
             updateStatus();
+        }
+    })
+    .catch(error => {
+        if (error.message !== 'Session expired') {
+            console.error('Power error:', error);
         }
     });
 }
@@ -159,7 +221,14 @@ function setButtonsEnabled(enabled) {
 
 function updateStatus() {
     fetch('/api/control/status')
-    .then(r => r.json())
+    .then(r => {
+        // Check for 401 Unauthorized (session timeout)
+        if (r.status === 401) {
+            showAuthModal();
+            throw new Error('Session expired');
+        }
+        return r.json();
+    })
     .then(data => {
         // Check authentication status
         if (data.authenticated === false) {

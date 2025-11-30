@@ -82,6 +82,15 @@ body {
     font-size: 1.1em;
 }
 
+.session-timeout-notice {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-top: -15px;
+    margin-bottom: 20px;
+    text-align: center;
+    opacity: 0.8;
+}
+
 .form-group {
     margin-bottom: 20px;
 }

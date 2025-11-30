@@ -560,12 +560,35 @@ function startPolling() {
     pollingIntervals.push(setInterval(fetchHealthHistory, 10000));   // Update charts every 10 seconds
     pollingIntervals.push(setInterval(updateAllRobotStatuses, 5000)); // Update all robot statuses every 5 seconds
     
+    // Check session validity every 60 seconds (30 minute timeout)
+    pollingIntervals.push(setInterval(checkSessionValidity, 60000));
+    
     // Refresh date range every minute to catch day transitions in live mode
     pollingIntervals.push(setInterval(function() {
         if (isLiveMode) {
             fetchRobotDateRange();
         }
     }, 60000)); // Every 60 seconds
+}
+
+/**
+ * Check if session is still valid
+ */
+function checkSessionValidity() {
+    $.ajax({
+        url: '/api/session/check',
+        method: 'GET',
+        success: function(data) {
+            // Session is valid
+        },
+        error: function(xhr) {
+            if (xhr.status === 401) {
+                // Session expired - redirect to login
+                alert('Your session has expired after 30 minutes of inactivity. Please log in again.');
+                window.location.href = '/login';
+            }
+        }
+    });
 }
 
 /**

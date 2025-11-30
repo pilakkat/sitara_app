@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
@@ -28,6 +28,12 @@ def battery_voltage_to_percentage(voltage):
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())  # Load from environment variable
+
+# Session configuration - 30 minute timeout
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(minutes=30)
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # Database Config
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -241,6 +247,12 @@ def get_user_accessible_robots():
         # Operators see only their assigned robots
         return [r.id for r in Robot.query.filter_by(assigned_to=current_user.id).all()]
 
+@app.before_request
+def before_request():
+    """Update session activity timestamp on each request"""
+    if current_user.is_authenticated:
+        session.modified = True  # Reset the session timeout on each request
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -253,6 +265,8 @@ def login():
         user = User.query.filter_by(username=username).first()
         if user and user.password == password: # Plaintext for hackathon speed
             login_user(user)
+            session.permanent = True  # Enable session timeout
+            session.modified = True   # Mark session as modified to reset timeout
             return redirect(url_for('dashboard'))
     return render_template('login.html')
 
@@ -294,6 +308,16 @@ def change_password():
 @login_required
 def dashboard():
     return render_template('dashboard.html', name=current_user.username)
+
+@app.route('/api/session/check')
+@login_required
+def check_session():
+    """Check if session is still valid"""
+    return jsonify({
+        'valid': True,
+        'username': current_user.username,
+        'user_id': current_user.id
+    })
 
 @app.route('/terms')
 def terms():

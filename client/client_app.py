@@ -209,6 +209,8 @@ class RobotClient:
         
         # Authentication state
         self.authenticated = False
+        self.last_session_check = None
+        self.session_check_interval = 60  # Check session every 60 seconds
         
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
     
@@ -255,6 +257,43 @@ class RobotClient:
         """Retry authentication with a new password"""
         self.password = new_password
         return self.login()
+    
+    def check_session_validity(self):
+        """Check if the server session is still valid"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/session/check",
+                timeout=NETWORK_TIMEOUT_DEFAULT
+            )
+            
+            if response.status_code == 200:
+                # Session is valid
+                self.last_session_check = datetime.now(timezone.utc)
+                return True
+            elif response.status_code == 401:
+                # Session expired
+                print(f"[ROBOT-{self.robot_id}] ⚠️ Session expired after 30 minutes of inactivity")
+                self.authenticated = False
+                return False
+            else:
+                # Other error, assume session invalid
+                print(f"[ROBOT-{self.robot_id}] ⚠️ Session check failed with status {response.status_code}")
+                self.authenticated = False
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ✗ Session check error: {e}")
+            # Don't mark as unauthenticated on network errors
+            return None  # Return None to indicate check failed (not necessarily expired)
+    
+    def should_check_session(self):
+        """Determine if it's time to check session validity"""
+        if not self.last_session_check:
+            return True
+        
+        now = datetime.now(timezone.utc)
+        time_since_last_check = (now - self.last_session_check).total_seconds()
+        
+        return time_since_last_check >= self.session_check_interval
     
     def check_software_updates(self):
         """Check for software updates from server"""
@@ -617,14 +656,21 @@ class RobotClient:
         while self.running and not self.stop_event.is_set():
             # Only send telemetry if authenticated
             if self.authenticated:
+                # Periodically check session validity
+                if self.should_check_session():
+                    session_valid = self.check_session_validity()
+                    if session_valid == False:  # Explicitly check for False (not None)
+                        print(f"[ROBOT-{self.robot_id}] Session timeout detected. Authentication required.")
+                        # Session expired, wait for re-authentication
+                        time.sleep(TELEMETRY_INTERVAL)
+                        continue
+                
                 self.update_robot_state()
                 self.send_telemetry()
             else:
                 # If not authenticated, just wait
                 time.sleep(TELEMETRY_INTERVAL)
                 continue
-            self.update_robot_state()
-            self.send_telemetry()
             
             # Check for software updates daily at midnight
             if self.should_check_versions():

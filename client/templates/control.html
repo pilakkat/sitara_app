@@ -13,7 +13,8 @@
     <div class="auth-modal" id="authModal">
         <div class="auth-content">
             <h2>🔐 Authentication Required</h2>
-            <p>Authentication failed. Please enter the correct password to continue.</p>
+            <p id="authMessage">Authentication failed. Please enter the correct password to continue.</p>
+            <p class="session-timeout-notice">⏱️ Sessions expire after 30 minutes of inactivity</p>
             <form id="authForm" onsubmit="retryAuth(event)">
                 <div class="form-group">
                     <label for="usernameDisplay">Username:</label>
