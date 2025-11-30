@@ -262,6 +262,34 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
+@app.route('/change-password', methods=['GET', 'POST'])
+@login_required
+def change_password():
+    if request.method == 'POST':
+        current_password = request.form.get('current_password')
+        new_password = request.form.get('new_password')
+        confirm_password = request.form.get('confirm_password')
+        
+        # Verify current password
+        if current_user.password != current_password:
+            return render_template('change_password.html', error='Current password is incorrect')
+        
+        # Validate new password
+        if len(new_password) < 6:
+            return render_template('change_password.html', error='New password must be at least 6 characters')
+        
+        # Verify password confirmation
+        if new_password != confirm_password:
+            return render_template('change_password.html', error='New passwords do not match')
+        
+        # Update password
+        current_user.password = new_password
+        db.session.commit()
+        
+        return render_template('change_password.html', success='Password updated successfully!')
+    
+    return render_template('change_password.html')
+
 @app.route('/dashboard')
 @login_required
 def dashboard():

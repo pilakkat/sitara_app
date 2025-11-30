@@ -622,3 +622,33 @@ select.form-control-cyber option,
 .navbar-brand:hover img {
     filter: drop-shadow(0 0 15px rgba(0, 212, 255, 0.8)) !important;
 }
+
+/* User Dropdown Menu Styling */
+.dropdown-menu {
+    background: rgba(10, 10, 30, 0.95) !important;
+    border: 1px solid var(--neon-blue) !important;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.3) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.dropdown-item {
+    color: var(--neon-blue) !important;
+    transition: all 0.3s ease;
+    padding: 0.5rem 1rem;
+    font-family: var(--font-body);
+}
+
+.dropdown-item:hover {
+    background: rgba(0, 243, 255, 0.15) !important;
+    color: var(--neon-blue) !important;
+    text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+}
+
+.dropdown-item:active {
+    background: rgba(0, 243, 255, 0.25) !important;
+}
+
+.dropdown-divider {
+    border-color: rgba(0, 243, 255, 0.3) !important;
+}
