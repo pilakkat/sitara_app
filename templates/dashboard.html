@@ -139,9 +139,54 @@
 
         <div class="bg-panel hud-card">
             <h5 class="text-neon mb-3" style="font-family: var(--font-head); font-weight: 700;">STATUS</h5>
-            <div class="alert alert-dark border-info text-info text-center" id="statusVal">
-                CONNECTING...
+            
+            <!-- Battery Icon with Status Display Inside -->
+            <div style="position: relative; width: 100%; max-width: 280px; margin: 0 auto 20px;">
+                <!-- SVG Battery Container -->
+                <svg viewBox="0 0 120 60" style="width: 100%; height: auto; filter: drop-shadow(0 0 8px rgba(0, 212, 255, 0.3));">
+                    <!-- Battery Terminal (Right Side) -->
+                    <rect x="115" y="22" width="5" height="16" rx="2" fill="var(--neon-blue)" opacity="0.6"/>
+                    
+                    <!-- Battery Body Outline -->
+                    <rect x="5" y="10" width="110" height="40" rx="4" stroke="var(--neon-blue)" stroke-width="2" fill="none" opacity="0.8"/>
+                    
+                    <!-- Battery Fill (Gradient Fill) -->
+                    <defs>
+                        <linearGradient id="batteryGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#00ff88;stop-opacity:0.8" />
+                            <stop offset="50%" style="stop-color:#00d4ff;stop-opacity:0.8" />
+                            <stop offset="100%" style="stop-color:#0088ff;stop-opacity:0.8" />
+                        </linearGradient>
+                        <linearGradient id="batteryGradientLow" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#ff4444;stop-opacity:0.8" />
+                            <stop offset="100%" style="stop-color:#ff8800;stop-opacity:0.8" />
+                        </linearGradient>
+                        <linearGradient id="batteryGradientMid" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#ffaa00;stop-opacity:0.8" />
+                            <stop offset="100%" style="stop-color:#ffdd00;stop-opacity:0.8" />
+                        </linearGradient>
+                    </defs>
+                    
+                    <!-- Clipping path for rounded corners -->
+                    <clipPath id="batteryClip">
+                        <rect x="7" y="12" width="106" height="36" rx="3"/>
+                    </clipPath>
+                    
+                    <!-- Battery Fill Rectangle -->
+                    <rect id="batteryFill" x="7" y="12" width="0" height="36" fill="url(#batteryGradient)" clip-path="url(#batteryClip)"/>
+                    
+                    <!-- Battery Percentage Text (positioned at top) -->
+                    <text id="batteryPercentText" x="60" y="25" font-family="var(--font-mono)" font-size="9" fill="var(--neon-blue)" text-anchor="middle" opacity="0.8" font-weight="bold">--</text>
+                </svg>
+                
+                <!-- Status Display Inside Battery (positioned lower) -->
+                <div style="position: absolute; top: 58%; left: 50%; transform: translate(-50%, -50%); width: 85%; text-align: center;">
+                    <div class="alert alert-dark border-info text-info mb-0" id="statusVal" style="padding: 6px 8px; font-size: 0.75rem; background: rgba(0,0,0,0.85); line-height: 1.2;">
+                        CONNECTING...
+                    </div>
+                </div>
             </div>
+            
             <p><strong>Motor Load:</strong> <span id="loadVal">0</span>%</p>
             <div class="progress" style="height: 5px; background: #333;">
                 <div class="progress-bar bg-info" id="loadBar" style="width: 0%"></div>
@@ -149,6 +194,28 @@
             <hr class="border-secondary">
             <p><strong>Cycle Counter:</strong> <span id="cycleVal">0</span></p>
             <p><strong>Last Update:</strong> <span id="lastUpdate" class="text-muted">--</span></p>
+        </div>
+
+        <div class="bg-panel hud-card">
+            <h5 class="text-neon mb-3" style="font-family: var(--font-head); font-weight: 700;">SOFTWARE VERSIONS</h5>
+            <div class="version-info">
+                <div class="d-flex justify-content-between mb-2">
+                    <small class="text-muted">RCPCU (Processing and Communication):</small>
+                    <small class="text-info" id="versionRCPCU">--</small>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <small class="text-muted">RCSPM (Sensory and Perception):</small>
+                    <small class="text-info" id="versionRCSPM">--</small>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <small class="text-muted">RCMMC (Mobility and Manipulation):</small>
+                    <small class="text-info" id="versionRCMMC">--</small>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <small class="text-muted">RCPMU (Power Management):</small>
+                    <small class="text-info" id="versionRCPMU">--</small>
+                </div>
+            </div>
         </div>
     </div>
 </div>

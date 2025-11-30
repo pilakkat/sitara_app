@@ -8,6 +8,24 @@ import random, os
 # Load environment variables from .env file
 load_dotenv()
 
+# Battery voltage to percentage conversion
+# For 24V system: Full=25.2V, Empty=20.0V (typical Li-ion 6S configuration)
+def battery_voltage_to_percentage(voltage):
+    """Convert battery voltage to percentage for 24V system"""
+    if voltage is None:
+        return 0
+    
+    BATTERY_MAX = 25.2  # Fully charged 6S Li-ion
+    BATTERY_MIN = 22.0  # Empty battery (safe cutoff)
+    
+    # Clamp voltage to valid range
+    voltage = max(BATTERY_MIN, min(BATTERY_MAX, voltage))
+    
+    # Calculate percentage
+    percentage = ((voltage - BATTERY_MIN) / (BATTERY_MAX - BATTERY_MIN)) * 100
+    
+    return round(percentage, 1)
+
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())  # Load from environment variable
 
@@ -36,6 +54,13 @@ class Robot(db.Model):
     model_type = db.Column(db.String(20), default="32DOF-HUMANOID")
     # Link to the user (Operator)
     assigned_to = db.Column(db.Integer, db.ForeignKey('user.id'))
+    
+    # Software versions for 4 controllers
+    version_rcpcu = db.Column(db.String(20), default="0.0.0")  # Robot Central Processing & Control Unit
+    version_rcspm = db.Column(db.String(20), default="0.0.0")  # Robot Control System & Power Management
+    version_rcmmc = db.Column(db.String(20), default="0.0.0")  # Robot Control Motion & Motor Controller
+    version_rcpmu = db.Column(db.String(20), default="0.0.0")  # Robot Control Power Management Unit
+    last_version_check = db.Column(db.DateTime)  # Last time robot checked for updates
     
     # Relationships
     telemetry = db.relationship('TelemetryLog', backref='robot', lazy='dynamic')
@@ -315,6 +340,7 @@ def api_telemetry():
         "robot_id": robot.id,
         "serial_number": robot.serial_number,
         "battery": latest_telem.battery_voltage or 0,
+        "battery_percent": battery_voltage_to_percentage(latest_telem.battery_voltage),
         "cpu_temp": latest_telem.cpu_temp or 0,
         "load": latest_telem.motor_load or 0,
         "status": latest_telem.status_code or "UNKNOWN",
@@ -322,7 +348,13 @@ def api_telemetry():
         "pos_y": latest_path.pos_y if latest_path else 50,
         "orientation": latest_path.orientation if latest_path else 0,
         "cycles": latest_telem.cycle_counter or 0,
-        "timestamp": format_timestamp(latest_telem.timestamp) if latest_telem.timestamp else None
+        "timestamp": format_timestamp(latest_telem.timestamp) if latest_telem.timestamp else None,
+        "versions": {
+            "RCPCU": robot.version_rcpcu or "0.0.0",
+            "RCSPM": robot.version_rcspm or "0.0.0",
+            "RCMMC": robot.version_rcmmc or "0.0.0",
+            "RCPMU": robot.version_rcpmu or "0.0.0"
+        }
     })
 
 @app.route('/api/telemetry_history')
@@ -901,6 +933,87 @@ def get_robots():
     except Exception as e:
         print(f"Error in get_robots: {e}")
         import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to fetch robots'}), 500
+
+@app.route('/api/software/latest_versions', methods=['GET'])
+@login_required
+def get_latest_software_versions():
+    """
+    Returns the latest available software versions for all 4 robot controllers
+    This endpoint is called by robots during boot sequence and daily at midnight
+    """
+    # In production, these would come from a version database or config file
+    # For now, we'll use hardcoded latest versions
+    latest_versions = {
+        'RCPCU': '2.3.1',  # Robot Central Processing & Control Unit
+        'RCSPM': '1.8.5',  # Robot Control System & Power Management
+        'RCMMC': '3.1.2',  # Robot Control Motion & Motor Controller
+        'RCPMU': '1.5.9',  # Robot Control Power Management Unit
+        'release_date': '2025-11-28',
+        'release_notes': {
+            'RCPCU': 'Performance improvements and bug fixes',
+            'RCSPM': 'Enhanced power management algorithms',
+            'RCMMC': 'Improved motor control precision',
+            'RCPMU': 'Battery optimization updates'
+        }
+    }
+    
+    return jsonify(latest_versions), 200
+
+@app.route('/api/robot/version', methods=['POST'])
+@login_required
+def update_robot_versions():
+    """
+    Update robot's software versions in database
+    Called by robot client when sending version information
+    """
+    try:
+        data = request.json
+        robot_id = data.get('robot_id')
+        
+        if not robot_id:
+            return jsonify({'error': 'robot_id required'}), 400
+        
+        # Check access permission
+        if not user_can_access_robot(robot_id):
+            return jsonify({'error': 'Access denied'}), 403
+        
+        robot = Robot.query.get(robot_id)
+        if not robot:
+            return jsonify({'error': 'Robot not found'}), 404
+        
+        # Update versions if provided
+        if 'version_rcpcu' in data:
+            robot.version_rcpcu = data['version_rcpcu']
+        if 'version_rcspm' in data:
+            robot.version_rcspm = data['version_rcspm']
+        if 'version_rcmmc' in data:
+            robot.version_rcmmc = data['version_rcmmc']
+        if 'version_rcpmu' in data:
+            robot.version_rcpmu = data['version_rcpmu']
+        
+        # Update last version check timestamp
+        robot.last_version_check = datetime.now(timezone.utc)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Version information updated',
+            'versions': {
+                'RCPCU': robot.version_rcpcu,
+                'RCSPM': robot.version_rcspm,
+                'RCMMC': robot.version_rcmmc,
+                'RCPMU': robot.version_rcpmu
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"Error updating robot versions: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Failed to update versions'}), 500
         traceback.print_exc()
         return jsonify({
             'status': 'error',

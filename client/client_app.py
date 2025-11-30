@@ -16,6 +16,68 @@ from dotenv import load_dotenv
 from flask import Flask, render_template_string, request, jsonify
 import sys
 
+# ============================================================================
+# CONFIGURATION CONSTANTS
+# ============================================================================
+
+# Battery Configuration (24V Li-ion 6S system)
+BATTERY_MAX_VOLTAGE = 25.2  # Fully charged voltage
+BATTERY_MIN_VOLTAGE = 20.0  # Critical/empty voltage
+BATTERY_NOMINAL_VOLTAGE = 24.5  # Normal operating voltage
+BATTERY_LOW_THRESHOLD = 22.65  # Warning threshold (~38%)
+BATTERY_CRITICAL_THRESHOLD = 20.0  # Critical threshold - stop movement
+
+# Temperature Configuration (Celsius)
+TEMP_MIN = 35  # Minimum temperature when idle
+TEMP_MAX = 85  # Maximum safe temperature
+TEMP_NORMAL = 45  # Normal operating temperature
+TEMP_COOLDOWN_RATE = 0.2  # Temperature decrease rate when idle
+TEMP_INCREASE_MOVING = 0.1  # Temperature increase when moving
+TEMP_INCREASE_SCANNING = 0.05  # Temperature increase when scanning
+
+# Movement Configuration
+MOVEMENT_SPEED = 1.0  # Units per update cycle
+MOVEMENT_BATTERY_DRAIN = 0.001  # Battery drain per movement cycle
+STANDBY_BATTERY_RECOVERY = 0.002  # Battery recovery when idle
+COLLISION_BUFFER = 2  # Safety buffer around obstacles (%)
+
+# Position Boundaries (% of map)
+MAP_SAFE_MIN = 5  # Minimum safe position
+MAP_SAFE_MAX = 95  # Maximum safe position
+
+# Telemetry Timing
+TELEMETRY_INTERVAL = 5  # Seconds between telemetry updates
+COMMAND_CHECK_INTERVAL = 3  # Seconds between command checks
+
+# Motor Load
+MOTOR_LOAD_MOVING = 65  # Motor load % when moving
+MOTOR_LOAD_SCANNING = 30  # Motor load % when scanning
+MOTOR_LOAD_STANDBY = 0  # Motor load % when idle
+
+# Robot Status Codes
+STATUS_STANDBY = "STANDBY"
+STATUS_MOVING = "MOVING"
+STATUS_SCANNING = "SCANNING"
+STATUS_CHARGING = "CHARGING"
+STATUS_FAULT = "FAULT"
+STATUS_OFFLINE = "OFFLINE"
+STATUS_BOOTING = "BOOTING"
+STATUS_BATTERY_LOW_SUFFIX = " | BAT LOW"
+
+# Software Version Configuration
+VERSION_RCPCU = '2.3.1'  # Robot Central Processing & Control Unit
+VERSION_RCSPM = '1.8.5'  # Robot Control System & Power Management
+VERSION_RCMMC = '3.1.2'  # Robot Control Motion & Motor Controller
+VERSION_RCPMU = '1.5.9'  # Robot Control Power Management Unit
+
+# Network Timeouts
+NETWORK_TIMEOUT_DEFAULT = 5  # Default timeout for API calls (seconds)
+NETWORK_TIMEOUT_EXTENDED = 10  # Extended timeout for version checks (seconds)
+
+# ============================================================================
+# OBSTACLE DEFINITIONS
+# ============================================================================
+
 # Define obstacle boundaries (x, y, width, height in %)
 OBSTACLES = [
     # Walls (5% thick)
@@ -32,7 +94,7 @@ OBSTACLES = [
     {'x': 55, 'y': 48, 'width': 8, 'height': 8, 'name': 'Pillar'}
 ]
 
-def check_collision(x, y, buffer=2):
+def check_collision(x, y, buffer=COLLISION_BUFFER):
     """Check if position collides with any obstacle"""
     for obstacle in OBSTACLES:
         if (x >= (obstacle['x'] - buffer) and 
@@ -45,23 +107,70 @@ def check_collision(x, y, buffer=2):
 def is_valid_position(x, y):
     """Check if position is valid (within bounds and no collision)"""
     # Keep robot within safe area (away from edges)
-    if x < 5 or x > 95 or y < 5 or y > 95:
+    if x < MAP_SAFE_MIN or x > MAP_SAFE_MAX or y < MAP_SAFE_MIN or y > MAP_SAFE_MAX:
         return False
     # Check obstacle collision
     return not check_collision(x, y)
 
-# Load environment variables
-# Priority: .env (personal credentials) -> config.env (defaults/template)
-if os.path.exists('.env'):
-    print("[CONFIG] Loading credentials from .env")
-    load_dotenv('.env')
+# ============================================================================
+# ENVIRONMENT CONFIGURATION (Module-level initialization for gunicorn safety)
+# ============================================================================
+
+# Get the directory where this script is located (for relative path resolution)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load environment variables with flexible priority:
+# 1. System environment (from systemd EnvironmentFile or shell)
+# 2. .env file (personal credentials, optional)
+# 3. config.env (defaults/template, optional)
+# 
+# For systemd deployment: Use EnvironmentFile instead of .env/config.env
+# For development: Use .env or config.env for convenience
+env_file = os.path.join(SCRIPT_DIR, '.env')
+config_file = os.path.join(SCRIPT_DIR, 'config.env')
+
+if os.path.exists(env_file):
+    print(f"[CONFIG] Loading credentials from {env_file}")
+    load_dotenv(env_file, override=False)  # Don't override existing env vars
+elif os.path.exists(config_file):
+    print(f"[CONFIG] Loading defaults from {config_file}")
+    load_dotenv(config_file, override=False)
 else:
-    print("[CONFIG] .env not found, loading from config.env")
-    load_dotenv('config.env')
+    print(f"[CONFIG] No .env or config.env found, using system environment only")
+
+# Load configuration from environment (safe for gunicorn & systemd)
+# Note: Using ROBOT_USERNAME/ROBOT_PASSWORD to avoid conflicts with Windows USERNAME env var
+SERVER_URL = os.getenv('SERVER_URL', 'http://127.0.0.1:5001')
+USERNAME = os.getenv('ROBOT_USERNAME')
+PASSWORD = os.getenv('ROBOT_PASSWORD')
+ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
+UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5001'))
+
+# Validate configuration
+if not USERNAME or not PASSWORD:
+    print("\n[ERROR] Missing credentials!")
+    print("Please set ROBOT_USERNAME and ROBOT_PASSWORD environment variables")
+    print("or create a .env file with these values")
+    print("See .env.example for template")
+    # Don't exit immediately - allow import to succeed for gunicorn
+    # but log the error clearly
+    USERNAME = USERNAME or 'MISSING_USERNAME'
+    PASSWORD = PASSWORD or 'MISSING_PASSWORD'
+
+if USERNAME.startswith('<') or USERNAME.startswith('your-'):
+    print("\n[WARNING] Username appears to be a placeholder!")
+    print("Please update .env with actual credentials")
+
+print(f"[CONFIG] Server: {SERVER_URL}")
+print(f"[CONFIG] Robot ID: {ROBOT_ID}")
+print(f"[CONFIG] User: {USERNAME}")
+print(f"[CONFIG] Control UI Port: {UI_PORT}")
 
 # Flask app for control interface
 control_app = Flask(__name__)
-robot_client = None  # Will be set after initialization
+
+# Robot client instance (initialized at module level for gunicorn compatibility)
+robot_client = None
 
 class RobotClient:
     def __init__(self, server_url, username, password, robot_id=1):
@@ -75,18 +184,27 @@ class RobotClient:
         
         # Robot state
         self.position = {'x': 30.0, 'y': 20.0, 'orientation': 0.0}  # Start in open area
-        self.battery_voltage = 24.5
-        self.temperature = 45.0
-        self.motor_load = 0
-        self.status = "STANDBY"
+        self.battery_voltage = BATTERY_NOMINAL_VOLTAGE
+        self.temperature = TEMP_NORMAL
+        self.motor_load = MOTOR_LOAD_STANDBY
+        self.status = STATUS_STANDBY
         self.cycle_count = 0
         self.is_powered_on = True  # Track power state
+        
+        # Software versions for 4 controllers
+        self.versions = {
+            'RCPCU': VERSION_RCPCU,
+            'RCSPM': VERSION_RCSPM,
+            'RCMMC': VERSION_RCMMC,
+            'RCPMU': VERSION_RCPMU
+        }
+        self.last_version_check = None
         
         # Track previous state for change detection
         self.last_telemetry_state = None
         
         # Movement parameters
-        self.speed = 1.0  # units per update
+        self.speed = MOVEMENT_SPEED
         self.current_command = None
         
         print(f"[ROBOT-{self.robot_id}] Initializing client...")
@@ -114,13 +232,84 @@ class RobotClient:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
             return False
     
+    def check_software_updates(self):
+        """Check for software updates from server"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/software/latest_versions",
+                timeout=NETWORK_TIMEOUT_EXTENDED
+            )
+            
+            if response.status_code == 200:
+                latest_versions = response.json()
+                self.last_version_check = datetime.now(timezone.utc)
+                
+                print(f"[ROBOT-{self.robot_id}] ✓ Version check completed")
+                print(f"[ROBOT-{self.robot_id}]   Current versions:")
+                for controller, version in self.versions.items():
+                    latest = latest_versions.get(controller, 'unknown')
+                    status = "✓ UP TO DATE" if version == latest else f"⚠ UPDATE AVAILABLE: {latest}"
+                    print(f"[ROBOT-{self.robot_id}]     {controller}: {version} {status}")
+                
+                # Send current versions to server
+                self.send_version_info()
+                
+                return latest_versions
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Version check failed: HTTP {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Version check error: {e}")
+            return None
+    
+    def send_version_info(self):
+        """Send current software versions to server"""
+        try:
+            version_data = {
+                'robot_id': self.robot_id,
+                'version_rcpcu': self.versions['RCPCU'],
+                'version_rcspm': self.versions['RCSPM'],
+                'version_rcmmc': self.versions['RCMMC'],
+                'version_rcpmu': self.versions['RCPMU']
+            }
+            
+            response = self.session.post(
+                f"{self.server_url}/api/robot/version",
+                json=version_data,
+                timeout=NETWORK_TIMEOUT_DEFAULT
+            )
+            
+            if response.status_code == 200:
+                print(f"[ROBOT-{self.robot_id}] ✓ Version info sent to server")
+                return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Failed to send version info: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Error sending version info: {e}")
+            return False
+    
+    def should_check_versions(self):
+        """Determine if it's time to check for updates (daily at midnight)"""
+        if not self.last_version_check:
+            return True
+        
+        now = datetime.now(timezone.utc)
+        # Check if it's a new day
+        if now.date() > self.last_version_check.date():
+            # Check if it's midnight hour (00:00 - 00:59)
+            if now.hour == 0:
+                return True
+        
+        return False
+    
     def fetch_last_position(self):
         """Fetch the last known position from the server"""
         try:
             response = self.session.get(
                 f"{self.server_url}/api/telemetry",
                 params={'robot_id': self.robot_id},
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
@@ -162,13 +351,16 @@ class RobotClient:
             # Generate timestamp on client side for accurate time tracking
             timestamp = datetime.now(timezone.utc).isoformat()
             
+            # Get status with battery warning appended if needed
+            status_to_send = self.get_status_with_battery_warning()
+            
             # Current state (excluding timestamp for comparison)
             current_state = {
                 'robot_id': self.robot_id,
                 'battery_voltage': round(self.battery_voltage, 2),
                 'temperature': round(self.temperature, 1),
                 'motor_load': self.motor_load,
-                'status': self.status,
+                'status': status_to_send,
                 'cycle_count': self.cycle_count,
                 'x': round(self.position['x'], 2),
                 'y': round(self.position['y'], 2),
@@ -187,13 +379,13 @@ class RobotClient:
             response = self.session.post(
                 f"{self.server_url}/api/robot/telemetry",
                 json=telemetry_data,
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
                 # Update last sent state
                 self.last_telemetry_state = current_state
-                print(f"[ROBOT-{self.robot_id}] → Telemetry sent | Status: {self.status} | Pos: ({self.position['x']:.1f}, {self.position['y']:.1f}) | Battery: {self.battery_voltage:.2f}V")
+                print(f"[ROBOT-{self.robot_id}] → Telemetry sent | Status: {status_to_send} | Pos: ({self.position['x']:.1f}, {self.position['y']:.1f}) | Battery: {self.battery_voltage:.2f}V")
                 return True
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Telemetry failed: {response.status_code}")
@@ -207,12 +399,15 @@ class RobotClient:
         try:
             timestamp = datetime.now(timezone.utc).isoformat()
             
+            # Get status with battery warning appended if needed
+            status_to_send = self.get_status_with_battery_warning()
+            
             current_state = {
                 'robot_id': self.robot_id,
                 'battery_voltage': round(self.battery_voltage, 2),
                 'temperature': round(self.temperature, 1),
                 'motor_load': self.motor_load,
-                'status': self.status,
+                'status': status_to_send,
                 'cycle_count': self.cycle_count,
                 'x': round(self.position['x'], 2),
                 'y': round(self.position['y'], 2),
@@ -225,12 +420,12 @@ class RobotClient:
             response = self.session.post(
                 f"{self.server_url}/api/robot/telemetry",
                 json=telemetry_data,
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
                 self.last_telemetry_state = current_state
-                print(f"[ROBOT-{self.robot_id}] → Immediate telemetry sent | Status: {self.status}")
+                print(f"[ROBOT-{self.robot_id}] → Immediate telemetry sent | Status: {status_to_send}")
                 return True
             else:
                 print(f"[ROBOT-{self.robot_id}] ✗ Immediate telemetry failed: {response.status_code}")
@@ -245,7 +440,7 @@ class RobotClient:
             response = self.session.get(
                 f"{self.server_url}/api/robot/commands",
                 params={'robot_id': self.robot_id},
-                timeout=5
+                timeout=NETWORK_TIMEOUT_DEFAULT
             )
             
             if response.status_code == 200:
@@ -276,32 +471,32 @@ class RobotClient:
         print(f"[ROBOT-{self.robot_id}] ← Received command: {cmd_type}")
         
         if cmd_type == 'move_forward':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_forward'
         elif cmd_type == 'move_up':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_up'
         elif cmd_type == 'move_down':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_down'
         elif cmd_type == 'move_left':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_left'
         elif cmd_type == 'move_right':
-            self.status = "MOVING"
-            self.motor_load = 65
+            self.status = STATUS_MOVING
+            self.motor_load = MOTOR_LOAD_MOVING
             self.current_command = 'move_right'
         elif cmd_type == 'stop' or cmd_type == 'halt':
-            self.status = "STANDBY"
-            self.motor_load = 0
+            self.status = STATUS_STANDBY
+            self.motor_load = MOTOR_LOAD_STANDBY
             self.current_command = None
         elif cmd_type == 'scan_area':
-            self.status = "SCANNING"
-            self.motor_load = 30
+            self.status = STATUS_SCANNING
+            self.motor_load = MOTOR_LOAD_SCANNING
             self.current_command = 'scan'
         else:
             print(f"[ROBOT-{self.robot_id}] Unknown command: {cmd_type}")
@@ -309,7 +504,7 @@ class RobotClient:
     def update_robot_state(self):
         """Update robot's internal state based on current command"""
         # Update position based on status and current command
-        if self.status == "MOVING":
+        if self.status == STATUS_MOVING:
             # Calculate new position based on command
             new_x = self.position['x']
             new_y = self.position['y']
@@ -343,40 +538,53 @@ class RobotClient:
             else:
                 # Stop if collision detected
                 print(f"[ROBOT-{self.robot_id}] Collision detected at ({new_x:.1f}, {new_y:.1f}), stopping")
-                self.status = "STANDBY"
-                self.motor_load = 0
+                self.status = STATUS_STANDBY
+                self.motor_load = MOTOR_LOAD_STANDBY
                 self.current_command = None
             
             # Battery drain
-            self.battery_voltage -= 0.001
-            self.temperature += 0.1
+            self.battery_voltage -= MOVEMENT_BATTERY_DRAIN
+            self.temperature += TEMP_INCREASE_MOVING
             
-        elif self.status == "SCANNING":
+        elif self.status == STATUS_SCANNING:
             # Rotate in place
             self.position['orientation'] += 2
             self.position['orientation'] = self.position['orientation'] % 360
-            self.temperature += 0.05
+            self.temperature += TEMP_INCREASE_SCANNING
             
-        elif self.status == "STANDBY":
+        elif self.status == STATUS_STANDBY:
             # Cool down when on standby
-            if self.temperature > 40:
-                self.temperature -= 0.2
+            if self.temperature > TEMP_MIN:
+                self.temperature -= TEMP_COOLDOWN_RATE
             # Battery slowly recovers if not moving
-            if self.battery_voltage < 24.5:
-                self.battery_voltage += 0.002
+            if self.battery_voltage < BATTERY_NOMINAL_VOLTAGE:
+                self.battery_voltage += STANDBY_BATTERY_RECOVERY
         
         # Battery limits
-        self.battery_voltage = max(22.0, min(25.2, self.battery_voltage))
+        self.battery_voltage = max(BATTERY_MIN_VOLTAGE, min(BATTERY_MAX_VOLTAGE, self.battery_voltage))
         
         # Temperature limits
-        self.temperature = max(35, min(85, self.temperature))
+        self.temperature = max(TEMP_MIN, min(TEMP_MAX, self.temperature))
         
-        # Battery warnings
-        if self.battery_voltage < 23.0:
-            self.status = "BATTERY LOW"
-            self.motor_load = 0
+        # Battery warnings - stop movement if critically low
+        if self.battery_voltage < BATTERY_CRITICAL_THRESHOLD:
+            # Stop movement but keep current status
+            if self.status == STATUS_MOVING:
+                self.status = STATUS_STANDBY
+            self.motor_load = MOTOR_LOAD_STANDBY
+            self.current_command = None
         
         # Note: cycle_count is NOT incremented here - it only increments on power-on
+    
+    def get_status_with_battery_warning(self):
+        """Get status string with battery warning appended if battery is low"""
+        base_status = self.status
+        
+        # Append battery warning if voltage is low
+        if self.battery_voltage < BATTERY_LOW_THRESHOLD:
+            return f"{base_status}{STATUS_BATTERY_LOW_SUFFIX}"
+        
+        return base_status
     
     def run_telemetry_loop(self):
         """Main loop for sending telemetry"""
@@ -385,7 +593,13 @@ class RobotClient:
         while self.running and not self.stop_event.is_set():
             self.update_robot_state()
             self.send_telemetry()
-            time.sleep(5)  # Send telemetry every 5 seconds
+            
+            # Check for software updates daily at midnight
+            if self.should_check_versions():
+                print(f"[ROBOT-{self.robot_id}] Daily version check triggered")
+                self.check_software_updates()
+            
+            time.sleep(TELEMETRY_INTERVAL)
     
     def run_command_loop(self):
         """Loop for checking commands"""
@@ -393,7 +607,7 @@ class RobotClient:
         
         while self.running and not self.stop_event.is_set():
             self.check_commands()
-            time.sleep(3)  # Check for commands every 3 seconds
+            time.sleep(COMMAND_CHECK_INTERVAL)
     
     def start(self):
         """Start the robot client"""
@@ -404,6 +618,10 @@ class RobotClient:
         # Fetch last known position from server
         print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
         self.fetch_last_position()
+        
+        # Check for software updates during boot sequence
+        print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
+        self.check_software_updates()
         
         self.running = True
         
@@ -888,7 +1106,7 @@ def get_status():
             'position': robot_client.position,
             'battery_voltage': robot_client.battery_voltage,
             'temperature': robot_client.temperature,
-            'status': robot_client.status,
+            'status': robot_client.get_status_with_battery_warning(),
             'motor_load': robot_client.motor_load,
             'cycle_count': robot_client.cycle_count,
             'is_powered_on': robot_client.is_powered_on
@@ -953,20 +1171,20 @@ def control_operation():
     operation = data.get('operation', '').lower()
     
     if operation == 'charging':
-        robot_client.status = 'CHARGING'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_CHARGING
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'fault':
-        robot_client.status = 'FAULT'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_FAULT
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'standby':
-        robot_client.status = 'STANDBY'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_STANDBY
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
     elif operation == 'moving':
-        robot_client.status = 'MOVING'
-        robot_client.motor_load = 65
+        robot_client.status = STATUS_MOVING
+        robot_client.motor_load = MOTOR_LOAD_MOVING
     elif operation == 'scanning':
-        robot_client.status = 'SCANNING'
-        robot_client.motor_load = 30
+        robot_client.status = STATUS_SCANNING
+        robot_client.motor_load = MOTOR_LOAD_SCANNING
     
     return jsonify({'success': True})
 
@@ -978,15 +1196,15 @@ def control_power():
     
     if robot_client.is_powered_on:
         # Turning OFF
-        robot_client.status = 'OFFLINE'
-        robot_client.motor_load = 0
+        robot_client.status = STATUS_OFFLINE
+        robot_client.motor_load = MOTOR_LOAD_STANDBY
         robot_client.is_powered_on = False
         # Send immediate telemetry before stopping
         robot_client.send_telemetry_immediate()
     else:
         # Turning ON - start with BOOTING
         robot_client.is_powered_on = True
-        robot_client.status = 'BOOTING'
+        robot_client.status = STATUS_BOOTING
         robot_client.motor_load = 10
         
         # Increment cycle count (power-on cycle)
@@ -1001,9 +1219,9 @@ def control_power():
         def transition_to_standby():
             import time
             time.sleep(3)  # Boot for 3 seconds
-            if robot_client.is_powered_on and robot_client.status == 'BOOTING':
-                robot_client.status = 'STANDBY'
-                robot_client.motor_load = 0
+            if robot_client.is_powered_on and robot_client.status == STATUS_BOOTING:
+                robot_client.status = STATUS_STANDBY
+                robot_client.motor_load = MOTOR_LOAD_STANDBY
                 robot_client.send_telemetry_immediate()
         
         threading.Thread(target=transition_to_standby, daemon=True).start()
@@ -1016,62 +1234,81 @@ def run_control_interface(port):
     control_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 
+def initialize_robot_client(server_url=None, username=None, password=None, robot_id=None):
+    """Initialize the robot client with given or default configuration"""
+    global robot_client
+    
+    # Use provided values or fall back to module-level config
+    server_url = server_url or SERVER_URL
+    username = username or USERNAME
+    password = password or PASSWORD
+    robot_id = robot_id or ROBOT_ID
+    
+    # Validate credentials
+    if not username or not password or username == 'MISSING_USERNAME' or password == 'MISSING_PASSWORD':
+        raise ValueError("Invalid or missing credentials. Please check environment variables.")
+    
+    robot_client = RobotClient(server_url, username, password, robot_id)
+    return robot_client
+
+
 def main():
-    """Main entry point"""
+    """Main entry point for standalone execution"""
     print("=" * 60)
     print("SITARA ROBOT CLIENT")
     print("=" * 60)
     
-    # Configuration from environment variables
-    # Note: Using ROBOT_USERNAME/ROBOT_PASSWORD to avoid conflicts with Windows USERNAME env var
-    SERVER_URL = os.getenv('SERVER_URL', 'http://127.0.0.1:5001')
-    USERNAME = os.getenv('ROBOT_USERNAME')
-    PASSWORD = os.getenv('ROBOT_PASSWORD')
-    ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
-    
-    # Validate required credentials
-    if not USERNAME or not PASSWORD:
-        print("\n[ERROR] Missing credentials!")
-        print("Please create a .env file with ROBOT_USERNAME and ROBOT_PASSWORD")
-        print("See .env.example for template")
-        sys.exit(1)
-    
-    if USERNAME.startswith('<') or USERNAME.startswith('your-'):
-        print("\n[ERROR] Please update .env with actual credentials!")
-        print("Current username appears to be a placeholder")
-        sys.exit(1)
-    
-    # Get control UI port
-    UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5002'))
+    # Use module-level configuration
+    server_url = SERVER_URL
+    username = USERNAME
+    password = PASSWORD
+    robot_id = ROBOT_ID
+    ui_port = UI_PORT
     
     # Allow command line override
     # Usage: python client_app.py [robot_id] [username] [password] [port]
     import argparse
     parser = argparse.ArgumentParser(description='SITARA Robot Client')
-    parser.add_argument('robot_id', type=int, nargs='?', default=ROBOT_ID, help='Robot ID')
-    parser.add_argument('username', nargs='?', default=USERNAME, help='Username')
-    parser.add_argument('password', nargs='?', default=PASSWORD, help='Password')
-    parser.add_argument('port', type=int, nargs='?', default=UI_PORT, help='Control UI port (default: 5002)')
+    parser.add_argument('robot_id', type=int, nargs='?', default=robot_id, help='Robot ID')
+    parser.add_argument('username', nargs='?', default=username, help='Username')
+    parser.add_argument('password', nargs='?', default=password, help='Password')
+    parser.add_argument('port', type=int, nargs='?', default=ui_port, help='Control UI port (default: 5002)')
     args = parser.parse_args()
     
-    ROBOT_ID = args.robot_id
-    USERNAME = args.username or USERNAME
-    PASSWORD = args.password or PASSWORD
-    UI_PORT = args.port
+    # Override with command line args if provided
+    robot_id = args.robot_id
+    username = args.username or username
+    password = args.password or password
+    ui_port = args.port
+    
+    # Validate credentials
+    if not username or not password:
+        print("\n[ERROR] Missing credentials!")
+        print("Please create a .env file with ROBOT_USERNAME and ROBOT_PASSWORD")
+        print("See .env.example for template")
+        sys.exit(1)
+    
+    if username.startswith('<') or username.startswith('your-') or username == 'MISSING_USERNAME':
+        print("\n[ERROR] Please update .env with actual credentials!")
+        print("Current username appears to be a placeholder or missing")
+        sys.exit(1)
     
     print(f"Configuration:")
-    print(f"  Server: {SERVER_URL}")
-    print(f"  Robot ID: {ROBOT_ID}")
-    print(f"  User: {USERNAME}")
-    print(f"  Control UI: http://127.0.0.1:{UI_PORT}")
+    print(f"  Server: {server_url}")
+    print(f"  Robot ID: {robot_id}")
+    print(f"  User: {username}")
+    print(f"  Control UI: http://127.0.0.1:{ui_port}")
     print("=" * 60)
     
-    # Create and start client
-    global robot_client
-    robot_client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
+    # Initialize robot client
+    try:
+        initialize_robot_client(server_url, username, password, robot_id)
+    except ValueError as e:
+        print(f"\n[ERROR] Failed to initialize robot client: {e}")
+        sys.exit(1)
     
     # Start Flask control interface in a separate thread
-    ui_thread = Thread(target=run_control_interface, args=(UI_PORT,), daemon=True)
+    ui_thread = Thread(target=run_control_interface, args=(ui_port,), daemon=True)
     ui_thread.start()
     
     # Give the UI a moment to start
@@ -1079,6 +1316,59 @@ def main():
     
     # Start the robot client (this will block)
     robot_client.start()
+
+
+# ============================================================================
+# AUTO-INITIALIZATION FOR WSGI/GUNICORN
+# ============================================================================
+
+def _auto_initialize_for_wsgi():
+    """Auto-initialize robot client for WSGI servers like gunicorn"""
+    global robot_client
+    
+    # Only initialize if we have valid credentials
+    if USERNAME and PASSWORD and USERNAME != 'MISSING_USERNAME' and PASSWORD != 'MISSING_PASSWORD':
+        if not USERNAME.startswith('<') and not USERNAME.startswith('your-'):
+            try:
+                print(f"[WSGI] Auto-initializing robot client...")
+                robot_client = RobotClient(SERVER_URL, USERNAME, PASSWORD, ROBOT_ID)
+                
+                # Authenticate first (blocking to ensure it's ready)
+                if robot_client.login():
+                    print(f"[WSGI] ✓ Robot client authenticated")
+                    robot_client.fetch_last_position()
+                else:
+                    print(f"[WSGI] ✗ Robot client authentication failed")
+                    return
+                
+                # Start the robot client threads
+                robot_client.running = True
+                
+                # Start telemetry thread
+                telemetry_thread = Thread(target=robot_client.run_telemetry_loop, daemon=True)
+                telemetry_thread.start()
+                
+                # Start command listener thread  
+                command_thread = Thread(target=robot_client.run_command_loop, daemon=True)
+                command_thread.start()
+                
+                print(f"[WSGI] ✓ Robot client fully initialized and running")
+                
+            except Exception as e:
+                print(f"[WSGI] ✗ Failed to auto-initialize robot client: {e}")
+                import traceback
+                traceback.print_exc()
+                robot_client = None
+        else:
+            print(f"[WSGI] Skipping auto-initialization: credentials appear to be placeholders")
+    else:
+        print(f"[WSGI] Skipping auto-initialization: missing or invalid credentials")
+
+# Trigger auto-initialization when imported by gunicorn
+# This is skipped when running as __main__ because main() handles it
+if __name__ != "__main__":
+    print(f"[INIT] Module imported (not running as __main__), triggering auto-initialization...")
+    _auto_initialize_for_wsgi()
 
 
 if __name__ == "__main__":
