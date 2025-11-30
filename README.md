@@ -31,29 +31,29 @@ SITARA is a comprehensive robot fleet management system that provides real-time 
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     SITARA Architecture                      │
+│                     SITARA Architecture                     │
 ├─────────────────────────────────────────────────────────────┤
-│                                                               │
+│                                                             │
 │  ┌──────────────┐         ┌──────────────┐                  │
 │  │   Browser    │◄────────┤  Flask Web   │                  │
 │  │  Dashboard   │  HTTP   │  Application │                  │
 │  │  (HTML/JS)   │────────►│   (app.py)   │                  │
 │  └──────────────┘         └───────┬──────┘                  │
-│                                    │                          │
-│                                    │ SQLAlchemy               │
-│                                    ▼                          │
-│                            ┌──────────────┐                  │
-│                            │   SQLite     │                  │
-│                            │   Database   │                  │
-│                            └──────────────┘                  │
-│                                    ▲                          │
-│                                    │ REST API                 │
-│  ┌──────────────┐         ┌───────┴──────┐                  │
-│  │    Robot     │────────►│ Robot Client │                  │
-│  │  Hardware    │  Serial │ Application  │                  │
+│                                   │                         │
+│                                   │ SQLAlchemy              │
+│                                   ▼                         │
+│                            ┌──────────────┐                 │
+│                            │   SQLite     │                 │
+│                            │   Database   │                 │
+│                            └──────────────┘                 │
+│                                   ▲                         │
+│                                   │ REST API                │
+│  ┌──────────────┐         ┌───────┴───────┐                 │
+│  │    Robot     │────────►│ Robot Client  │                 │
+│  │  Hardware    │  Serial │ Application   │                 │
 │  │   (Simul.)   │◄────────│(client_app.py)│                 │
-│  └──────────────┘         └──────────────┘                  │
-│                                                               │
+│  └──────────────┘         └───────────────┘                 │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
