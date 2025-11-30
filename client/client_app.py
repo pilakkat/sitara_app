@@ -222,11 +222,22 @@ class RobotClient:
                 allow_redirects=False
             )
             
-            if response.status_code in [200, 302]:
-                print(f"[ROBOT-{self.robot_id}] ✓ Authenticated as {self.username}")
-                return True
+            # Successful login returns a 302 redirect to dashboard
+            # Failed login returns 200 with login page HTML
+            if response.status_code == 302:
+                redirect_location = response.headers.get('Location', '')
+                if 'dashboard' in redirect_location or redirect_location.endswith('/dashboard'):
+                    print(f"[ROBOT-{self.robot_id}] ✓ Authenticated as {self.username}")
+                    return True
+                else:
+                    print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Unexpected redirect to {redirect_location}")
+                    return False
+            elif response.status_code == 200:
+                # Status 200 means we got the login page back = authentication failed
+                print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: Invalid credentials")
+                return False
             else:
-                print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: {response.status_code}")
+                print(f"[ROBOT-{self.robot_id}] ✗ Authentication failed: HTTP {response.status_code}")
                 return False
         except Exception as e:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
