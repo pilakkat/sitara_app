@@ -115,6 +115,38 @@ def is_valid_position(x, y):
     # Check obstacle collision
     return not check_collision(x, y)
 
+def find_nearest_safe_position(x, y):
+    """Find the nearest safe position to the given coordinates
+    
+    This is used when the robot is initialized inside an obstacle (e.g., demo system).
+    Searches outward in a spiral pattern to find the nearest valid position.
+    """
+    # If already valid, return as-is
+    if is_valid_position(x, y):
+        return x, y
+    
+    print(f"[COLLISION] Position ({x:.1f}, {y:.1f}) is inside obstacle, finding safe position...")
+    
+    # Try positions in expanding circles around the current position
+    max_search_radius = 50  # Maximum distance to search
+    step = 1  # Search step size
+    
+    for radius in range(1, max_search_radius, step):
+        # Check positions in a circle around the current point
+        for angle in range(0, 360, 15):  # Check every 15 degrees
+            rad = angle * (math.pi / 180)
+            test_x = x + radius * math.cos(rad)
+            test_y = y + radius * math.sin(rad)
+            
+            if is_valid_position(test_x, test_y):
+                print(f"[COLLISION] Found safe position at ({test_x:.1f}, {test_y:.1f}), distance: {radius:.1f}")
+                return test_x, test_y
+    
+    # Fallback to center of map if nothing found
+    center_x, center_y = 50.0, 50.0
+    print(f"[COLLISION] No safe position found nearby, using map center ({center_x}, {center_y})")
+    return center_x, center_y
+
 # ============================================================================
 # ENVIRONMENT CONFIGURATION (Module-level initialization for gunicorn safety)
 # ============================================================================
@@ -460,6 +492,13 @@ class RobotClient:
                     self.position['y'] = data.get('pos_y', 50.0)
                     self.position['orientation'] = data.get('orientation', 0.0)
                     print(f"[ROBOT-{self.robot_id}] ✓ Restored last position: ({self.position['x']:.1f}, {self.position['y']:.1f}), orientation: {self.position['orientation']:.1f}°")
+                    
+                    # Safety check: If position is inside an obstacle, move to nearest safe position
+                    if not is_valid_position(self.position['x'], self.position['y']):
+                        safe_x, safe_y = find_nearest_safe_position(self.position['x'], self.position['y'])
+                        self.position['x'] = safe_x
+                        self.position['y'] = safe_y
+                        print(f"[ROBOT-{self.robot_id}] ⚠ Corrected to safe position: ({safe_x:.1f}, {safe_y:.1f})")
                     
                     # Also restore other state if available
                     if 'battery' in data:
@@ -891,19 +930,34 @@ def control_move():
     direction = data.get('direction', '')
     step = 2.0  # Slower step changes
     
-    if direction == 'up':
-        robot_client.position['y'] = max(0, robot_client.position['y'] - step)  # UP decreases Y
-    elif direction == 'down':
-        robot_client.position['y'] = min(100, robot_client.position['y'] + step)  # DOWN increases Y
-    elif direction == 'left':
-        robot_client.position['x'] = max(0, robot_client.position['x'] - step)
-    elif direction == 'right':
-        robot_client.position['x'] = min(100, robot_client.position['x'] + step)
-    elif direction == 'center':
-        robot_client.position['x'] = 50.0
-        robot_client.position['y'] = 50.0
+    # Calculate new position
+    new_x = robot_client.position['x']
+    new_y = robot_client.position['y']
     
-    return jsonify({'success': True})
+    if direction == 'up':
+        new_y = max(0, robot_client.position['y'] - step)  # UP decreases Y
+    elif direction == 'down':
+        new_y = min(100, robot_client.position['y'] + step)  # DOWN increases Y
+    elif direction == 'left':
+        new_x = max(0, robot_client.position['x'] - step)
+    elif direction == 'right':
+        new_x = min(100, robot_client.position['x'] + step)
+    elif direction == 'center':
+        new_x = 50.0
+        new_y = 50.0
+    
+    # Validate new position against obstacles before updating
+    if is_valid_position(new_x, new_y):
+        robot_client.position['x'] = new_x
+        robot_client.position['y'] = new_y
+        return jsonify({'success': True})
+    else:
+        # Position would collide with obstacle
+        return jsonify({
+            'success': False, 
+            'error': 'Collision detected',
+            'message': f'Cannot move to ({new_x:.1f}, {new_y:.1f}) - obstacle in the way'
+        }), 400
 
 @control_app.route('/api/control/voltage', methods=['POST'])
 def control_voltage():

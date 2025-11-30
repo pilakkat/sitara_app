@@ -1,8 +1,44 @@
-function showMessage(text) {
+// Toast notification with auto-hide
+let toastTimeout;
+
+function hideToast() {
     const msg = document.getElementById('message');
-    msg.textContent = text;
-    msg.classList.add('show');
-    setTimeout(() => msg.classList.remove('show'), 3000);
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+    }
+    msg.classList.add('hiding');
+    setTimeout(() => {
+        msg.classList.remove('show', 'hiding', 'error', 'warning', 'success');
+        msg.innerHTML = '';
+    }, 1000);
+}
+
+function showMessage(text, type = 'success') {
+    const msg = document.getElementById('message');
+    
+    // Clear any existing timeout
+    if (toastTimeout) {
+        clearTimeout(toastTimeout);
+    }
+    
+    // Remove hiding class if present
+    msg.classList.remove('hiding');
+    
+    // Set content with close button
+    msg.innerHTML = `
+        <span>${text}</span>
+        <button class="message-close" onclick="hideToast()" aria-label="Close">×</button>
+    `;
+    
+    // Remove any existing type classes
+    msg.classList.remove('error', 'warning', 'success');
+    // Add the new type class
+    msg.classList.add('show', type);
+    
+    // Auto-hide after 4 seconds
+    toastTimeout = setTimeout(() => {
+        hideToast();
+    }, 4000);
 }
 
 function showAuthModal() {
@@ -92,6 +128,13 @@ function moveDirection(dir) {
             showAuthModal();
             throw new Error('Session expired');
         }
+        if (r.status === 400) {
+            // Collision or invalid position
+            return r.json().then(data => {
+                showMessage(data.message || 'Cannot move - obstacle in the way', 'error');
+                throw new Error('Movement blocked');
+            });
+        }
         return r.json();
     })
     .then(data => {
@@ -99,11 +142,11 @@ function moveDirection(dir) {
             showMessage('Position updated: ' + dir.toUpperCase());
             updateStatus();
         } else if (data.error) {
-            showMessage('Error: ' + data.error);
+            showMessage('Error: ' + data.error, 'error');
         }
     })
     .catch(error => {
-        if (error.message !== 'Session expired') {
+        if (error.message !== 'Session expired' && error.message !== 'Movement blocked') {
             console.error('Move error:', error);
         }
     });

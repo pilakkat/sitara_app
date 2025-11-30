@@ -380,17 +380,79 @@ h1 {
     margin-top: 15px;
 }
 
+/* Toast Notification */
 .message {
-    text-align: center;
-    padding: 10px;
-    margin-top: 15px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.2);
-    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    min-width: 250px;
+    max-width: auto;
+    padding: 15px 45px 15px 20px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.541);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(10px);
+    z-index: 2000;
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 1s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    pointer-events: none;
+    font-weight: 500;
+    border-left: 4px solid rgba(255, 255, 255, 0.5);
+    position: relative;
 }
 
 .message.show {
-    display: block;
+    opacity: 0.75;
+    transform: translateX(20px);
+    pointer-events: auto;
+}
+
+.message.hiding {
+    opacity: 0;
+    transform: translateX(400px);
+}
+
+.message.error {
+    background: rgba(209, 24, 24, 0.664);
+    border-left-color: #ff1744;
+    color: #fff;
+}
+
+.message.warning {
+    background: rgba(255, 206, 59, 0.616);
+    border-left-color: #ffa000;
+    color: #000;
+}
+
+.message.success {
+    background: rgba(76, 175, 80, 0.95);
+    border-left-color: #4caf50;
+    color: #fff;
+}
+
+.message-close {
+    position: absolute;
+    top: 50%;
+    right: 15px;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: inherit;
+    font-size: 20px;
+    cursor: pointer;
+    opacity: 0.7;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s;
+}
+
+.message-close:hover {
+    opacity: 1;
 }
 
 /* Software Updates Section */
