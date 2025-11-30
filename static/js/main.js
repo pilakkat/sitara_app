@@ -699,7 +699,7 @@ function updateTelemetryDisplay(data) {
         // Combine translate (for centering) with rotate (for orientation)
         // Subtract 90 to make 0° point upward instead of rightward
         const rotation = data.orientation - 90;
-        robotMarker.css('transform', `translate(-50%, -50%) rotate(${rotation}deg)`);
+        robotMarker.css('transform', `translate(-50%, -50%)`);// rotate(${rotation}deg)`);
     } else {
         // Keep centering even without orientation
         robotMarker.css('transform', 'translate(-50%, -50%)');
@@ -1278,7 +1278,7 @@ function updateRobotPositionFromTimeline(index) {
     // Update robot marker rotation if orientation is available
     if (dataPoint.orientation !== undefined) {
         const rotation = dataPoint.orientation - 90;
-        $('#robotMarker').css('transform', `translate(-50%, -50%) rotate(${rotation}deg)`);
+        $('#robotMarker').css('transform', `translate(-50%, -50%)`);// rotate(${rotation}deg)`);
     } else {
         $('#robotMarker').css('transform', 'translate(-50%, -50%)');
     }
