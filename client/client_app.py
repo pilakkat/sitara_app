@@ -149,6 +149,35 @@ PASSWORD = os.getenv('ROBOT_PASSWORD')
 ROBOT_ID = int(os.getenv('ROBOT_ID', '1'))
 UI_PORT = int(os.getenv('CLIENT_UI_PORT', '5001'))
 
+# Try to load credentials from database (overrides .env if available)
+# This ensures that if a user successfully logged in with a new password via retry,
+# the database password takes precedence over the .env file
+try:
+    from client_database import ClientDatabase
+    db = ClientDatabase()
+    if os.path.exists(db.db_path):
+        # Get user from database for this robot
+        robot_data = db.get_robot(ROBOT_ID)
+        if robot_data and robot_data['assigned_user_id']:
+            # Get the user assigned to this robot
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT username, password FROM user WHERE id = ?', 
+                             (robot_data['assigned_user_id'],))
+                user = cursor.fetchone()
+                if user:
+                    db_username = user['username']
+                    db_password = user['password']
+                    # Override with database credentials
+                    if db_username and db_password:
+                        USERNAME = db_username
+                        PASSWORD = db_password
+                        print(f"[CONFIG] Loaded credentials from database (overriding .env)")
+except Exception as e:
+    # If database doesn't exist or has errors, fall back to .env values
+    print(f"[CONFIG] Could not load from database (using .env): {e}")
+    pass
+
 # Validate configuration
 if not USERNAME or not PASSWORD:
     print("\n[ERROR] Missing credentials!")
@@ -263,8 +292,22 @@ class RobotClient:
     
     def retry_authentication(self, new_password):
         """Retry authentication with a new password"""
+        old_password = self.password
         self.password = new_password
-        return self.login()
+        login_success = self.login()
+        
+        # If login is successful, update password in database
+        if login_success and self.db:
+            try:
+                updated = self.db.update_user_password(self.username, new_password)
+                if updated:
+                    print(f"[ROBOT-{self.robot_id}] ✓ Password updated in database for user: {self.username}")
+                else:
+                    print(f"[ROBOT-{self.robot_id}] ⚠ Password update in database failed for user: {self.username}")
+            except Exception as e:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Error updating password in database: {e}")
+        
+        return login_success
     
     def check_session_validity(self):
         """Check if the server session is still valid"""
