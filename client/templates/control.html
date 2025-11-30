@@ -16,6 +16,10 @@
             <p>Authentication failed. Please enter the correct password to continue.</p>
             <form id="authForm" onsubmit="retryAuth(event)">
                 <div class="form-group">
+                    <label for="usernameDisplay">Username:</label>
+                    <div class="auth-username" id="usernameDisplay">Loading...</div>
+                </div>
+                <div class="form-group">
                     <label for="passwordInput">Password:</label>
                     <input type="password" id="passwordInput" class="auth-input" required autocomplete="current-password">
                 </div>

@@ -60,6 +60,11 @@ function checkAuthentication() {
     fetch('/api/auth/status')
     .then(r => r.json())
     .then(data => {
+        // Update username display
+        if (data.username) {
+            document.getElementById('usernameDisplay').textContent = data.username;
+        }
+        
         if (!data.authenticated) {
             showAuthModal();
         } else {
