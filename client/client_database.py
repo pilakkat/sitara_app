@@ -123,20 +123,38 @@ class ClientDatabase:
             cursor.execute('SELECT * FROM software_versions ORDER BY component')
             return cursor.fetchall()
     
-    def update_available_version(self, component, available_version, release_date=None, release_notes=None):
-        """Update available version from server"""
+    def update_available_version(self, robot_id, component, available_version, release_date=None, release_notes=None):
+        """Update available version from server and check against robot's current version"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # Check if version is different from current
-            cursor.execute('SELECT current_version FROM software_versions WHERE component = ?', 
-                         (component,))
+            # Get robot's current version from robot table
+            column_map = {
+                'RCPCU': 'version_rcpcu',
+                'RCSPM': 'version_rcspm',
+                'RCMMC': 'version_rcmmc',
+                'RCPMU': 'version_rcpmu'
+            }
+            
+            if component not in column_map:
+                return False
+            
+            cursor.execute(f'SELECT {column_map[component]} FROM robot WHERE id = ?', (robot_id,))
             result = cursor.fetchone()
             
-            if result:
-                current_version = result['current_version']
-                update_pending = 1 if available_version != current_version else 0
-                
+            if not result:
+                return False
+            
+            current_version = result[0]
+            
+            # Don't flag update as pending if available version is 'unknown'
+            update_pending = 1 if (available_version != current_version and available_version != 'unknown') else 0
+            
+            # Check if entry exists in software_versions
+            cursor.execute('SELECT id FROM software_versions WHERE component = ?', (component,))
+            exists = cursor.fetchone()
+            
+            if exists:
                 cursor.execute('''
                     UPDATE software_versions 
                     SET available_version = ?, release_date = ?, release_notes = ?,
@@ -149,8 +167,8 @@ class ClientDatabase:
                 cursor.execute('''
                     INSERT INTO software_versions 
                     (component, current_version, available_version, release_date, release_notes, update_pending)
-                    VALUES (?, ?, ?, ?, ?, 1)
-                ''', (component, '0.0.0', available_version, release_date, release_notes))
+                    VALUES (?, ?, ?, ?, ?, ?)
+                ''', (component, current_version, available_version, release_date, release_notes, update_pending))
             
             return cursor.rowcount > 0
     
@@ -197,17 +215,47 @@ class ClientDatabase:
             
             return True
     
-    def get_pending_updates(self):
-        """Get list of components with pending updates"""
+    def get_pending_updates(self, robot_id):
+        """Get list of components with pending updates for a specific robot"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            
+            # Get robot's current versions
             cursor.execute('''
-                SELECT component, current_version, available_version, release_notes
+                SELECT version_rcpcu, version_rcspm, version_rcmmc, version_rcpmu 
+                FROM robot WHERE id = ?
+            ''', (robot_id,))
+            robot = cursor.fetchone()
+            
+            if not robot:
+                return []
+            
+            current_versions = {
+                'RCPCU': robot['version_rcpcu'],
+                'RCSPM': robot['version_rcspm'],
+                'RCMMC': robot['version_rcmmc'],
+                'RCPMU': robot['version_rcpmu']
+            }
+            
+            # Get available versions
+            cursor.execute('''
+                SELECT component, available_version, release_notes
                 FROM software_versions 
                 WHERE update_pending = 1
                 ORDER BY component
             ''')
-            return cursor.fetchall()
+            
+            updates = []
+            for row in cursor.fetchall():
+                component = row['component']
+                updates.append({
+                    'component': component,
+                    'current_version': current_versions.get(component, '0.0.0'),
+                    'available_version': row['available_version'],
+                    'release_notes': row['release_notes']
+                })
+            
+            return updates
     
     def get_version_history(self, robot_id, limit=10):
         """Get version update history for robot"""

@@ -400,8 +400,9 @@ class RobotClient:
                         available_version = latest_versions[controller]
                         release_notes = release_notes_data.get(controller, '')
                         
-                        # Save to database
+                        # Save to database with robot_id
                         self.db.update_available_version(
+                            self.robot_id,
                             controller, 
                             available_version, 
                             release_date, 
@@ -1073,17 +1074,17 @@ def check_versions():
     
     try:
         latest_versions = robot_client.check_software_updates()
-        pending_updates = robot_client.db.get_pending_updates()
+        pending_updates = robot_client.db.get_pending_updates(robot_client.robot_id)
         
         return jsonify({
             'success': True,
             'latest_versions': latest_versions,
             'pending_updates': [{
-                'component': row['component'],
-                'current': row['current_version'],
-                'available': row['available_version'],
-                'notes': row['release_notes']
-            } for row in pending_updates]
+                'component': update['component'],
+                'current': update['current_version'],
+                'available': update['available_version'],
+                'notes': update['release_notes']
+            } for update in pending_updates]
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1097,17 +1098,16 @@ def get_version_status():
     try:
         current_versions = robot_client.versions
         all_versions = robot_client.db.get_all_software_versions()
-        pending_updates = robot_client.db.get_pending_updates()
+        pending_updates = robot_client.db.get_pending_updates(robot_client.robot_id)
         
         return jsonify({
             'current_versions': current_versions,
             'available_updates': [{
-                'component': row['component'],
-                'current_version': row['current_version'],
-                'available_version': row['available_version'],
-                'release_date': row['release_date'],
-                'release_notes': row['release_notes']
-            } for row in pending_updates],
+                'component': update['component'],
+                'current_version': update['current_version'],
+                'available_version': update['available_version'],
+                'release_notes': update['release_notes']
+            } for update in pending_updates],
             'version_history': [{
                 'component': row['component'],
                 'old_version': row['old_version'],
