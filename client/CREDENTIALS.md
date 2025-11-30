@@ -5,16 +5,16 @@
 The SITARA system has two types of users defined in the server's `.env` file:
 
 ### 1. Administrator
-- **Username:** `admin`
-- **Password:** `S1tara_Adm1n_LikeAB0sch`
+- **Username:** Set in server `.env` file
+- **Password:** Set in server `.env` file (keep secure!)
 - **Permissions:** 
   - Can view ALL robots in the system
   - Full access to dashboard
   - Can control any robot
 
 ### 2. Operator
-- **Username:** `deepak`
-- **Password:** `S1tara0perat0r`
+- **Username:** Set in server `.env` file
+- **Password:** Set in server `.env` file (keep secure!)
 - **Permissions:**
   - Can view only assigned robots
   - Dashboard access
@@ -31,11 +31,11 @@ The SITARA system has two types of users defined in the server's `.env` file:
 
 ### Default Client Configuration
 
-The `client/config.env` file uses operator credentials by default:
+The `client/config.env` file should contain operator credentials:
 
 ```properties
-ROBOT_USERNAME=deepak
-ROBOT_PASSWORD=S1tara0perat0r
+ROBOT_USERNAME=your_operator_username
+ROBOT_PASSWORD=your_operator_password
 ROBOT_ID=1
 ```
 
@@ -48,7 +48,7 @@ ROBOT_ID=1
 cd client
 python client_app.py 1
 ```
-Uses: `deepak` / `S1tara0perat0r` (from config.env)
+Uses credentials from config.env or .env file
 
 #### Multiple Robots (Same Operator)
 ```bash
@@ -58,38 +58,29 @@ python client_app.py 1
 # Terminal 2
 python client_app.py 2
 ```
-All robots assigned to operator `deepak`
 
-#### Multiple Robots (Admin Override - for testing)
+#### Multiple Robots (Different Users)
 ```bash
 # Terminal 1 - Robot as operator
-python client_app.py 1 deepak S1tara0perat0r
+python client_app.py 1 operator1 password1
 
-# Terminal 2 - Robot as admin (not recommended)
-python client_app.py 2 admin S1tara_Adm1n_LikeAB0sch
+# Terminal 2 - Robot as different operator
+python client_app.py 2 operator2 password2
 ```
 
 ## Dashboard Login
 
 ### As Admin (See All Robots)
 1. Go to http://127.0.0.1:5001/login
-2. Username: `admin`
-3. Password: `S1tara_Adm1n_LikeAB0sch`
-4. Result: Robot dropdown shows ALL robots in the system
-
-**Note:** After running `seed_data.py`, the SITARA-X1 robot is assigned to operator `deepak`, so admin will see it but it belongs to deepak.
+2. Enter admin username and password
+3. Result: Robot dropdown shows ALL robots in the system
 
 ### As Operator (See Assigned Robots Only)
 1. Go to http://127.0.0.1:5001/login
-2. Username: `deepak`
-3. Password: `S1tara0perat0r`
-4. Result: Robot dropdown shows only SITARA-X1 (the robot assigned to deepak)
+2. Enter operator username and password
+3. Result: Robot dropdown shows only robots assigned to that operator
 
 **Security:** Operators cannot access data from robots not assigned to them, even if they know the robot ID.
-1. Go to http://127.0.0.1:5001/login
-2. Username: `deepak`
-3. Password: `S1tara0perat0r`
-4. Result: Robot dropdown shows only robots assigned to `deepak`
 
 ## Security Notes
 
@@ -123,22 +114,9 @@ python client_app.py 2 admin S1tara_Adm1n_LikeAB0sch
 
 To add a new operator user:
 
-1. Edit `init_db.py`:
-```python
-new_operator = User(username='newoperator', password='SecurePassword123!')
-db.session.add(new_operator)
-```
-
-2. Run initialization:
-```bash
-python init_db.py
-```
-
-3. Update client `config.env`:
-```properties
-USERNAME=newoperator
-PASSWORD=SecurePassword123!
-```
+1. Edit `init_db.py` and add the user
+2. Run initialization: `python init_db.py`
+3. Update client `.env` file with the new credentials
 
 ## Troubleshooting
 
