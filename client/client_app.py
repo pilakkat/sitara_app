@@ -499,7 +499,7 @@ class RobotClient:
         self.temperature = max(35, min(85, self.temperature))
         
         # Battery warnings
-        if self.battery_voltage < 23.0:
+        if self.battery_voltage < 20.0:
             self.status = "BATTERY LOW"
             self.motor_load = 0
         

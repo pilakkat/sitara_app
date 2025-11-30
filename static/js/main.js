@@ -633,18 +633,35 @@ function fetchHistoricalTelemetry(date) {
  * Update telemetry display with data
  */
 function updateTelemetryDisplay(data) {
-    // 1. Update Numeric Values
+    // 1. Update Battery Display with Percentage and Visual Fill
+    const batteryPercent = data.battery_percent || 0;
+    $('#batteryPercentText').text(batteryPercent.toFixed(0) + '%');
+    
+    // Update battery fill width (max 106px based on SVG viewBox)
+    const fillWidth = (batteryPercent / 100) * 106;
+    $('#batteryFill').attr('width', fillWidth);
+    
+    // Change battery fill color based on level
+    let gradientUrl = 'url(#batteryGradient)';  // Default: green-blue (high)
+    if (batteryPercent < 20) {
+        gradientUrl = 'url(#batteryGradientLow)';  // Red-orange (critical)
+    } else if (batteryPercent < 50) {
+        gradientUrl = 'url(#batteryGradientMid)';  // Yellow-orange (medium)
+    }
+    $('#batteryFill').attr('fill', gradientUrl);
+    
+    // 2. Update Numeric Values
     $('#batteryVal').text(data.battery.toFixed(2) + ' V');
     $('#tempVal').text(data.cpu_temp + ' °C');
     $('#cycleVal').text(data.cycles.toLocaleString());
     
-    // 2. Update timestamp
+    // 3. Update timestamp
     if (data.timestamp) {
         const updateTime = new Date(data.timestamp);
         $('#lastUpdate').text(updateTime.toLocaleTimeString());
     }
     
-    // 3. Update Status Badge
+    // 4. Update Status Badge
     let statusBadge = $('#statusVal');
     statusBadge.text(data.status);
     
@@ -659,7 +676,7 @@ function updateTelemetryDisplay(data) {
                   .addClass('border-danger text-danger');
     }
 
-    // 4. Update Load Bar
+    // 5. Update Load Bar
     $('#loadVal').text(data.load);
     $('#loadBar').css('width', data.load + '%');
     
@@ -669,7 +686,7 @@ function updateTelemetryDisplay(data) {
         $('#loadBar').removeClass('bg-danger').addClass('bg-info');
     }
 
-    // 5. Update Software Versions (if available)
+    // 6. Update Software Versions (if available)
     if (data.versions) {
         $('#versionRCPCU').text(data.versions.RCPCU || '--');
         $('#versionRCSPM').text(data.versions.RCSPM || '--');
@@ -677,7 +694,7 @@ function updateTelemetryDisplay(data) {
         $('#versionRCPMU').text(data.versions.RCPMU || '--');
     }
 
-    // 6. Move Robot on Map (with collision detection)
+    // 7. Move Robot on Map (with collision detection)
     const robotMarker = $('#robotMarker');
     
     // Check if new position collides with obstacles

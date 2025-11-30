@@ -8,6 +8,24 @@ import random, os
 # Load environment variables from .env file
 load_dotenv()
 
+# Battery voltage to percentage conversion
+# For 24V system: Full=25.2V, Empty=20.0V (typical Li-ion 6S configuration)
+def battery_voltage_to_percentage(voltage):
+    """Convert battery voltage to percentage for 24V system"""
+    if voltage is None:
+        return 0
+    
+    BATTERY_MAX = 25.2  # Fully charged 6S Li-ion
+    BATTERY_MIN = 22.0  # Empty battery (safe cutoff)
+    
+    # Clamp voltage to valid range
+    voltage = max(BATTERY_MIN, min(BATTERY_MAX, voltage))
+    
+    # Calculate percentage
+    percentage = ((voltage - BATTERY_MIN) / (BATTERY_MAX - BATTERY_MIN)) * 100
+    
+    return round(percentage, 1)
+
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', os.urandom(24).hex())  # Load from environment variable
 
@@ -322,6 +340,7 @@ def api_telemetry():
         "robot_id": robot.id,
         "serial_number": robot.serial_number,
         "battery": latest_telem.battery_voltage or 0,
+        "battery_percent": battery_voltage_to_percentage(latest_telem.battery_voltage),
         "cpu_temp": latest_telem.cpu_temp or 0,
         "load": latest_telem.motor_load or 0,
         "status": latest_telem.status_code or "UNKNOWN",
