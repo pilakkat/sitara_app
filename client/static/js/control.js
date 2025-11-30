@@ -54,6 +54,21 @@ function hideAuthModal() {
     document.getElementById('authError').textContent = '';
 }
 
+function showRebootEffect() {
+    // Add visual reboot effect to status display
+    const statusElements = document.querySelectorAll('.value');
+    statusElements.forEach(el => {
+        el.style.transition = 'opacity 0.3s';
+        el.style.opacity = '0.3';
+    });
+    
+    setTimeout(() => {
+        statusElements.forEach(el => {
+            el.style.opacity = '1';
+        });
+    }, 1500);
+}
+
 function retryAuth(event) {
     event.preventDefault();
     
@@ -375,52 +390,147 @@ function installUpdate(component) {
     const btn = updateItem.querySelector('.btn-update');
     
     btn.disabled = true;
-    btn.textContent = '⏳ INSTALLING...';
+    btn.innerHTML = '⏳ CHECKING STATE...';
     
-    fetch('/api/versions/update', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({component: component})
-    })
-    .then(r => {
-        if (r.status === 401) {
-            showAuthModal();
-            throw new Error('Session expired');
+    // First, check robot state
+    fetch('/api/control/status')
+    .then(r => r.json())
+    .then(statusData => {
+        const status = statusData.status.replace(' | BAT LOW', ''); // Remove battery warning suffix
+        const isPoweredOn = statusData.is_powered_on;
+        
+        // Check if robot is powered on
+        if (!isPoweredOn) {
+            btn.disabled = false;
+            btn.innerHTML = '📥 INSTALL UPDATE';
+            showMessage('❌ Cannot update: Robot is powered OFF. Please power on first.', 'error');
+            return;
         }
-        return r.json();
-    })
-    .then(data => {
-        if (data.success) {
-            updateItem.classList.add('update-success');
-            updateItem.innerHTML = `
-                <div class="update-header">
-                    <div class="update-component">✓ ${data.component}</div>
-                    <div class="update-versions">
-                        ${data.old_version} <span class="version-arrow">→</span> ${data.new_version}
-                    </div>
-                </div>
-                <div class="update-notes" style="color: #00ff00;">
-                    ${data.message}
-                </div>
-            `;
-            showMessage(`✓ ${component} updated successfully!`);
+        
+        // Check if robot is in safe state for update
+        if (status === 'MOVING' || status === 'SCANNING') {
+            btn.innerHTML = '⏸️ STOPPING OPERATIONS...';
             
-            // Refresh status to show new version
-            setTimeout(updateStatus, 1000);
+            // Stop the robot first
+            fetch('/api/control/operation', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({operation: 'standby'})
+            })
+            .then(() => {
+                // Wait a moment for robot to stop
+                setTimeout(() => {
+                    startUpdateProcess(component, updateItem, btn);
+                }, 1000);
+            })
+            .catch(error => {
+                btn.disabled = false;
+                btn.innerHTML = '📥 INSTALL UPDATE';
+                showMessage('❌ Failed to stop robot operations', 'error');
+            });
+        } else if (status === 'STANDBY' || status === 'CHARGING') {
+            // Safe to proceed
+            startUpdateProcess(component, updateItem, btn);
         } else {
             btn.disabled = false;
-            btn.textContent = '📥 INSTALL UPDATE';
-            showMessage(`❌ Update failed: ${data.error}`);
+            btn.innerHTML = '📥 INSTALL UPDATE';
+            showMessage(`❌ Cannot update: Robot is in ${status} state. Must be STANDBY or CHARGING.`, 'error');
         }
     })
     .catch(error => {
-        if (error.message !== 'Session expired') {
-            console.error('Update error:', error);
-            btn.disabled = false;
-            btn.textContent = '📥 INSTALL UPDATE';
-            showMessage('❌ Update installation failed');
-        }
+        btn.disabled = false;
+        btn.innerHTML = '📥 INSTALL UPDATE';
+        showMessage('❌ Failed to check robot state', 'error');
     });
+}
+
+function startUpdateProcess(component, updateItem, btn) {
+    // Stage 1: Downloading
+    let downloadProgress = 0;
+    btn.innerHTML = '📥 DOWNLOADING... 0%';
+    
+    const downloadInterval = setInterval(() => {
+        downloadProgress += Math.random() * 15 + 10;
+        if (downloadProgress >= 100) {
+            downloadProgress = 100;
+        }
+        btn.innerHTML = `📥 DOWNLOADING... ${Math.floor(downloadProgress)}%`;
+        
+        if (downloadProgress >= 100) {
+            clearInterval(downloadInterval);
+            btn.innerHTML = '📥 DOWNLOAD COMPLETE';
+            
+            // Stage 2: Flashing
+            setTimeout(() => {
+                let flashProgress = 0;
+                const flashInterval = setInterval(() => {
+                    flashProgress += Math.random() * 12 + 8;
+                    if (flashProgress >= 100) {
+                        flashProgress = 100;
+                    }
+                    btn.innerHTML = `⚡ FLASHING FIRMWARE... ${Math.floor(flashProgress)}%`;
+                    
+                    if (flashProgress >= 100) {
+                        clearInterval(flashInterval);
+                        btn.innerHTML = '⚡ FLASH COMPLETE';
+                        
+                        // Stage 3: Rebooting
+                        setTimeout(() => {
+                            btn.innerHTML = '🔄 REBOOTING CONTROLLER...';
+                            
+                            // Call actual update API
+                            fetch('/api/versions/update', {
+                                method: 'POST',
+                                headers: {'Content-Type': 'application/json'},
+                                body: JSON.stringify({component: component})
+                            })
+                            .then(r => {
+                                if (r.status === 401) {
+                                    showAuthModal();
+                                    throw new Error('Session expired');
+                                }
+                                return r.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    setTimeout(() => {
+                                        updateItem.classList.add('update-success');
+                                        updateItem.innerHTML = `
+                                            <div class="update-header">
+                                                <div class="update-component">✓ ${data.component} UPDATED</div>
+                                                <div class="update-versions">
+                                                    ${data.old_version} <span class="version-arrow">→</span> ${data.new_version}
+                                                </div>
+                                            </div>
+                                            <div class="update-notes" style="color: #00ff00;">
+                                                ✓ ${data.message}<br>
+                                                <small style="color: #4caf50;">Controller rebooted successfully</small>
+                                            </div>
+                                        `;
+                                        showMessage(`✓ ${component} updated to ${data.new_version}!`, 'success');
+                                        setTimeout(updateStatus, 1000);
+                                        showRebootEffect();
+                                    }, 2000);
+                                } else {
+                                    btn.disabled = false;
+                                    btn.innerHTML = '📥 INSTALL UPDATE';
+                                    showMessage(`❌ Update failed: ${data.error}`, 'error');
+                                }
+                            })
+                            .catch(error => {
+                                if (error.message !== 'Session expired') {
+                                    console.error('Update error:', error);
+                                    btn.disabled = false;
+                                    btn.innerHTML = '📥 INSTALL UPDATE';
+                                    showMessage('❌ Update installation failed', 'error');
+                                }
+                            });
+                        }, 500);
+                    }
+                }, 100);
+            }, 500);
+        }
+    }, 150);
 }
 
 // Check authentication on page load

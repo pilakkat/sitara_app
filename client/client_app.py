@@ -1132,6 +1132,20 @@ def apply_update():
     if not robot_client.authenticated:
         return jsonify({'success': False, 'error': 'Not authenticated'}), 401
     
+    # Check if robot is powered on
+    if not robot_client.is_powered_on:
+        return jsonify({'success': False, 'error': 'Robot is powered OFF. Cannot update while powered down.'}), 400
+    
+    # Check if robot is in safe state (not moving/scanning)
+    safe_states = [STATUS_STANDBY, STATUS_CHARGING]
+    current_status = robot_client.status.replace(STATUS_BATTERY_LOW_SUFFIX, '')  # Remove battery warning
+    
+    if current_status not in safe_states:
+        return jsonify({
+            'success': False, 
+            'error': f'Robot must be in STANDBY or CHARGING state. Current state: {current_status}'
+        }), 400
+    
     data = request.json
     component = data.get('component')
     
@@ -1145,6 +1159,7 @@ def apply_update():
             return jsonify({'success': False, 'error': 'No update available'}), 400
         
         new_version = version_info['available_version']
+        old_version = version_info['current_version']
         
         # Apply update in database
         success = robot_client.db.apply_software_update(
@@ -1160,12 +1175,12 @@ def apply_update():
             # Send updated version to server
             robot_client.send_version_info()
             
-            print(f"[ROBOT-{robot_client.robot_id}] ✓ Updated {component} to {new_version}")
+            print(f"[ROBOT-{robot_client.robot_id}] ✓ Updated {component} from {old_version} to {new_version}")
             
             return jsonify({
                 'success': True,
                 'component': component,
-                'old_version': version_info['current_version'],
+                'old_version': old_version,
                 'new_version': new_version,
                 'message': f'Successfully updated {component} to {new_version}'
             })
