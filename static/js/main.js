@@ -669,7 +669,15 @@ function updateTelemetryDisplay(data) {
         $('#loadBar').removeClass('bg-danger').addClass('bg-info');
     }
 
-    // 5. Move Robot on Map (with collision detection)
+    // 5. Update Software Versions (if available)
+    if (data.versions) {
+        $('#versionRCPCU').text(data.versions.RCPCU || '--');
+        $('#versionRCSPM').text(data.versions.RCSPM || '--');
+        $('#versionRCMMC').text(data.versions.RCMMC || '--');
+        $('#versionRCPMU').text(data.versions.RCPMU || '--');
+    }
+
+    // 6. Move Robot on Map (with collision detection)
     const robotMarker = $('#robotMarker');
     
     // Check if new position collides with obstacles

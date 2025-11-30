@@ -129,6 +129,15 @@ class RobotClient:
         self.cycle_count = 0
         self.is_powered_on = True  # Track power state
         
+        # Software versions for 4 controllers
+        self.versions = {
+            'RCPCU': '2.3.1',  # Robot Central Processing & Control Unit
+            'RCSPM': '1.8.5',  # Robot Control System & Power Management
+            'RCMMC': '3.1.2',  # Robot Control Motion & Motor Controller
+            'RCPMU': '1.5.9'   # Robot Control Power Management Unit
+        }
+        self.last_version_check = None
+        
         # Track previous state for change detection
         self.last_telemetry_state = None
         
@@ -160,6 +169,77 @@ class RobotClient:
         except Exception as e:
             print(f"[ROBOT-{self.robot_id}] ✗ Login error: {e}")
             return False
+    
+    def check_software_updates(self):
+        """Check for software updates from server"""
+        try:
+            response = self.session.get(
+                f"{self.server_url}/api/software/latest_versions",
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                latest_versions = response.json()
+                self.last_version_check = datetime.now(timezone.utc)
+                
+                print(f"[ROBOT-{self.robot_id}] ✓ Version check completed")
+                print(f"[ROBOT-{self.robot_id}]   Current versions:")
+                for controller, version in self.versions.items():
+                    latest = latest_versions.get(controller, 'unknown')
+                    status = "✓ UP TO DATE" if version == latest else f"⚠ UPDATE AVAILABLE: {latest}"
+                    print(f"[ROBOT-{self.robot_id}]     {controller}: {version} {status}")
+                
+                # Send current versions to server
+                self.send_version_info()
+                
+                return latest_versions
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Version check failed: HTTP {response.status_code}")
+                return None
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Version check error: {e}")
+            return None
+    
+    def send_version_info(self):
+        """Send current software versions to server"""
+        try:
+            version_data = {
+                'robot_id': self.robot_id,
+                'version_rcpcu': self.versions['RCPCU'],
+                'version_rcspm': self.versions['RCSPM'],
+                'version_rcmmc': self.versions['RCMMC'],
+                'version_rcpmu': self.versions['RCPMU']
+            }
+            
+            response = self.session.post(
+                f"{self.server_url}/api/robot/version",
+                json=version_data,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                print(f"[ROBOT-{self.robot_id}] ✓ Version info sent to server")
+                return True
+            else:
+                print(f"[ROBOT-{self.robot_id}] ⚠ Failed to send version info: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"[ROBOT-{self.robot_id}] ⚠ Error sending version info: {e}")
+            return False
+    
+    def should_check_versions(self):
+        """Determine if it's time to check for updates (daily at midnight)"""
+        if not self.last_version_check:
+            return True
+        
+        now = datetime.now(timezone.utc)
+        # Check if it's a new day
+        if now.date() > self.last_version_check.date():
+            # Check if it's midnight hour (00:00 - 00:59)
+            if now.hour == 0:
+                return True
+        
+        return False
     
     def fetch_last_position(self):
         """Fetch the last known position from the server"""
@@ -432,6 +512,12 @@ class RobotClient:
         while self.running and not self.stop_event.is_set():
             self.update_robot_state()
             self.send_telemetry()
+            
+            # Check for software updates daily at midnight
+            if self.should_check_versions():
+                print(f"[ROBOT-{self.robot_id}] Daily version check triggered")
+                self.check_software_updates()
+            
             time.sleep(5)  # Send telemetry every 5 seconds
     
     def run_command_loop(self):
@@ -451,6 +537,10 @@ class RobotClient:
         # Fetch last known position from server
         print(f"[ROBOT-{self.robot_id}] Fetching last known position...")
         self.fetch_last_position()
+        
+        # Check for software updates during boot sequence
+        print(f"[ROBOT-{self.robot_id}] Boot sequence: Checking for software updates...")
+        self.check_software_updates()
         
         self.running = True
         
