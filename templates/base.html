@@ -13,23 +13,26 @@
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-panel border-bottom border-secondary">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-panel border-bottom border-secondary" style="margin-bottom: 2rem;">
         <div class="container-fluid">
-            <a class="navbar-brand text-neon" href="#">
+            <a class="navbar-brand text-neon" href="{{ url_for('index') }}" style="font-family: var(--font-head); font-size: 1.5rem; font-weight: 700;">
                 <i class="bi bi-cpu"></i> SITARA DYNAMICS
             </a>
-            <div class="d-flex">
+            <div class="d-flex align-items-center gap-3">
                 {% if current_user.is_authenticated %}
-                    <span class="navbar-text me-3">OP: {{ current_user.username }}</span>
-                    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-danger">DISCONNECT</a>
-                {% else %}
+                    <span class="navbar-text mb-0">OP: {{ current_user.username }}</span>
+                    <a href="{{ url_for('logout') }}" class="btn btn-sm btn-logout">
+                        <i class="bi bi-box-arrow-right me-1"></i> LOGOUT
+                    </a>
+                {% elif request.endpoint != 'login' %}
                     <a href="{{ url_for('login') }}" class="btn btn-sm btn-cyber">LOGIN</a>
                 {% endif %}
             </div>
         </div>
     </nav>
 
-    <div class="flex-grow-1"> {% block content %}{% endblock %}
+    <div class="container-fluid px-4">
+        {% block content %}{% endblock %}
     </div>
 
     {% include 'footer.html' %}

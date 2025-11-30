@@ -3,6 +3,7 @@ __pycache__/
 
 # Environment variables
 .env
+client/.env
 
 # Database
 database/

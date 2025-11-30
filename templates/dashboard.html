@@ -4,38 +4,141 @@
 <div id="dashboard-view" class="row">
     <div class="col-lg-8">
         <div class="bg-panel hud-card">
-            <h4 class="text-neon">LIVE SPATIAL MAPPING (SLAM)</h4>
-            <div class="map-container" id="mapZone">
-                <div id="robotMarker" class="robot-marker" style="top: 50%; left: 50%;"></div>
+            <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-3">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <h5 class="text-neon mb-0" style="font-family: var(--font-head); font-weight: 700;">LIVE SPATIAL MAPPING (SLAM)</h5>
+                    <div class="vr mx-2 d-none d-xl-block" style="opacity: 0.3;"></div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label class="text-secondary small mb-0">ROBOT:</label>
+                        <select id="robotSelector" class="form-select form-select-sm form-control-cyber" style="width: 150px;" onchange="switchRobot()">
+                            <option value="">Loading...</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <label class="text-secondary small mb-0 me-2">VIEW DATE:</label>
+                    <button id="btnPrevDay" class="btn btn-sm btn-outline-cyber" onclick="navigateDate(-1)" title="Previous Day">◀</button>
+                    <input type="date" id="dateSelector" class="form-control form-control-sm form-control-cyber" style="width: 160px;color:var(--neon-blue);">
+                    <button id="btnNextDay" class="btn btn-sm btn-outline-cyber" onclick="navigateDate(1)" title="Next Day">▶</button>
+                    <button id="btnLoadHistorical" class="btn btn-sm btn-mode-toggle" onclick="loadHistoricalData()">
+                        <span class="mode-indicator"></span>LOAD
+                    </button>
+                    <button id="btnLiveMode" class="btn btn-sm btn-mode-toggle active" onclick="loadLiveData()">
+                        <span class="mode-indicator"></span>LIVE
+                    </button>
+                </div>
             </div>
-            <div class="mt-3 text-center">
-                <button class="btn btn-cyber mx-2" onclick="sendCommand('move_forward')">▲ FWD</button>
-                <button class="btn btn-cyber mx-2" onclick="sendCommand('stop')">■ HALT</button>
-                <button class="btn btn-cyber mx-2" onclick="sendCommand('scan_area')">◎ SCAN</button>
+            <div class="map-container" id="mapZone">
+                <canvas id="pathCanvas" width="600" height="400" style="position: absolute; top: 0; left: 0;"></canvas>
+                
+                <!-- Obstacles will be dynamically loaded from database -->
+                <div id="obstaclesContainer"></div>
+                
+                <div id="robotMarker" class="robot-marker status-standby" style="top: 50%; left: 50%;">
+                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <!-- Head -->
+                        <circle cx="12" cy="4" r="2.5" opacity="0.9"/>
+                        <!-- Body -->
+                        <rect x="10" y="7" width="4" height="7" rx="1" opacity="0.9"/>
+                        <!-- Arms -->
+                        <rect x="6" y="8" width="3.5" height="1.5" rx="0.5" opacity="0.8"/>
+                        <rect x="14.5" y="8" width="3.5" height="1.5" rx="0.5" opacity="0.8"/>
+                        <!-- Legs -->
+                        <rect x="9.5" y="14" width="1.8" height="5" rx="0.5" opacity="0.8"/>
+                        <rect x="12.7" y="14" width="1.8" height="5" rx="0.5" opacity="0.8"/>
+                        <!-- Core highlight -->
+                        <circle cx="12" cy="10" r="1" opacity="0.6"/>
+                    </svg>
+                </div>
+            </div>
+            
+            <!-- Timeline Scrubber -->
+            <div class="timeline-container mt-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small class="text-muted" id="timelineStart">--:--</small>
+                    <small class="text-neon" id="timelineCurrent">Current Position</small>
+                    <small class="text-muted" id="timelineEnd">--:--</small>
+                </div>
+                <div class="timeline-track" id="timelineTrack">
+                    <div class="timeline-progress" id="timelineProgress"></div>
+                    <div class="timeline-handle" id="timelineHandle"></div>
+                </div>
+                <div class="text-center mt-2">
+                    <small class="text-muted">
+                        <span id="timelineInfo">Drag to scrub through time</span>
+                        <span class="ms-2">|</span>
+                        <span class="ms-2" id="timelineDataPoints">0 data points</span>
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Robot Control Buttons -->
+            <div class="mt-3 d-flex justify-content-center align-items-center gap-3">
+                <!-- Directional Control Cluster -->
+                <div class="control-cluster">
+                    <div class="d-grid" style="grid-template-columns: repeat(3, 45px); grid-template-rows: repeat(3, 40px); gap: 3px;">
+                        <div></div>
+                        <button class="btn btn-cyber btn-sm d-flex align-items-center justify-content-center" onclick="sendCommand('move_up')" style="width: 100%; height: 100%; padding: 0; font-size: 1.2rem;">▲</button>
+                        <div></div>
+                        <button class="btn btn-cyber btn-sm d-flex align-items-center justify-content-center" onclick="sendCommand('move_left')" style="width: 100%; height: 100%; padding: 0; font-size: 1.2rem;">◀</button>
+                        <div style="display: flex; align-items: center; justify-content: center; font-size: 0.6rem; color: var(--neon-blue); opacity: 0.5;">MOVE</div>
+                        <button class="btn btn-cyber btn-sm d-flex align-items-center justify-content-center" onclick="sendCommand('move_right')" style="width: 100%; height: 100%; padding: 0; font-size: 1.2rem;">▶</button>
+                        <div></div>
+                        <button class="btn btn-cyber btn-sm d-flex align-items-center justify-content-center" onclick="sendCommand('move_down')" style="width: 100%; height: 100%; padding: 0; font-size: 1.2rem;">▼</button>
+                        <div></div>
+                    </div>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="d-flex flex-column gap-2">
+                    <button class="btn btn-cyber btn-sm" onclick="sendCommand('stop')">■ HALT</button>
+                    <button class="btn btn-cyber btn-sm" onclick="sendCommand('scan_area')">◎ SCAN</button>
+                </div>
             </div>
         </div>
         
         <div class="bg-panel hud-card">
-            <h4 class="text-neon">SYSTEM LOGS</h4>
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="text-neon mb-0" style="font-family: var(--font-head); font-weight: 700;">TELEMETRY LOGS</h5>
+                <small class="text-muted" id="dataMode">MODE: LIVE</small>
+            </div>
             <div class="log-terminal" id="sysLogs">
-                <div class="log-entry">[S4-CLOUD] Connection Established...</div>
-                <div class="log-entry">[S4-CLOUD] Waiting for S1 telemetry...</div>
+                <div class="log-entry">[S4-CLOUD] Initializing telemetry stream...</div>
             </div>
         </div>
     </div>
 
     <div class="col-lg-4">
         <div class="bg-panel hud-card text-center">
-            <h5 class="text-muted">SYSTEM HEALTH</h5>
-            <h1 class="text-neon" id="batteryVal">-- V</h1>
-            <small>BATTERY (24V ARCH)</small>
+            <h5 class="text-neon mb-3" style="font-family: var(--font-head); font-weight: 700;">SYSTEM HEALTH</h5>
+            
+            <!-- Battery Voltage Display -->
+            <div class="mb-3">
+                <h1 class="text-neon mb-0" id="batteryVal">-- V</h1>
+                <small class="text-muted">BATTERY (24V ARCH)</small>
+            </div>
+            
+            <!-- Battery History Chart -->
+            <div class="chart-container mb-3" style="position: relative; height: 120px;">
+                <canvas id="batteryChart"></canvas>
+            </div>
+            
             <hr class="border-secondary">
-            <h2 id="tempVal">-- °C</h2>
-            <small>CORE TEMP</small>
+            
+            <!-- Temperature Display -->
+            <div class="mb-3">
+                <h2 class="mb-0" id="tempVal">-- °C</h2>
+                <small class="text-muted">CORE TEMP</small>
+            </div>
+            
+            <!-- Temperature History Chart -->
+            <div class="chart-container" style="position: relative; height: 120px;">
+                <canvas id="tempChart"></canvas>
+            </div>
         </div>
 
         <div class="bg-panel hud-card">
-            <h5 class="text-muted">STATUS</h5>
+            <h5 class="text-neon mb-3" style="font-family: var(--font-head); font-weight: 700;">STATUS</h5>
             <div class="alert alert-dark border-info text-info text-center" id="statusVal">
                 CONNECTING...
             </div>
@@ -43,7 +146,13 @@
             <div class="progress" style="height: 5px; background: #333;">
                 <div class="progress-bar bg-info" id="loadBar" style="width: 0%"></div>
             </div>
+            <hr class="border-secondary">
+            <p><strong>Cycle Counter:</strong> <span id="cycleVal">0</span></p>
+            <p><strong>Last Update:</strong> <span id="lastUpdate" class="text-muted">--</span></p>
         </div>
     </div>
 </div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 {% endblock %}

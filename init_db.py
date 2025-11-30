@@ -21,6 +21,10 @@ def init_users():
         admin_password = os.getenv('ADMIN_PASSWORD')
         operator_username = os.getenv('OPERATOR_USERNAME', 'operator')
         operator_password = os.getenv('OPERATOR_PASSWORD')
+        operator2_username = os.getenv('OPERATOR2_USERNAME', 'operator2')
+        operator2_password = os.getenv('OPERATOR2_PASSWORD')
+        operator3_username = os.getenv('OPERATOR3_USERNAME', 'operator3')
+        operator3_password = os.getenv('OPERATOR3_PASSWORD')
         
         # Check if users exist
         if not User.query.filter_by(username=admin_username).first():
@@ -36,6 +40,20 @@ def init_users():
             op = User(username=operator_username, password=operator_password)
             db.session.add(op)
             print(f"User '{operator_username}' created.")
+        
+        if not User.query.filter_by(username=operator2_username).first():
+            if not operator2_password:
+                raise ValueError("OPERATOR2_PASSWORD environment variable is required")
+            op2 = User(username=operator2_username, password=operator2_password)
+            db.session.add(op2)
+            print(f"User '{operator2_username}' created.")
+        
+        if not User.query.filter_by(username=operator3_username).first():
+            if not operator3_password:
+                raise ValueError("OPERATOR3_PASSWORD environment variable is required")
+            op3 = User(username=operator3_username, password=operator3_password)
+            db.session.add(op3)
+            print(f"User '{operator3_username}' created.")
             
         db.session.commit()
         print("Database initialized successfully.")
