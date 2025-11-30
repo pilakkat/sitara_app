@@ -1353,9 +1353,18 @@ def _auto_initialize_for_wsgi():
                 # Authenticate first (blocking to ensure it's ready)
                 if robot_client.login():
                     print(f"[WSGI] ✓ Robot client authenticated")
+                    
+                    # Fetch robot-specific obstacles from server
+                    print(f"[WSGI] Fetching robot-specific obstacles...")
+                    robot_client.fetch_obstacles()
+                    
+                    # Fetch last known position
                     robot_client.fetch_last_position()
                 else:
                     print(f"[WSGI] ✗ Robot client authentication failed")
+                    # Use fallback global obstacles if authentication failed
+                    robot_client.obstacles = OBSTACLES
+                    print(f"[WSGI] ⚠ Using default global obstacles as fallback")
                     return
                 
                 # Start the robot client threads
