@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SITARA Robot Client Control</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/control.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 SITARA ROBOT CONTROL</h1>
+        <div class="robot-id">Robot ID: <span id="robotId">Loading...</span></div>
+        
+        <div class="controls-row">
+            <div class="control-panel">
+                <h2>📍 Position Control</h2>
+                <div class="control-grid">
+                    <div></div>
+                    <button class="btn" id="upBtn" onclick="moveDirection('up')">▲<br>UP</button>
+                    <div></div>
+                    <button class="btn" id="leftBtn" onclick="moveDirection('left')">◀<br>LEFT</button>
+                    <div></div>
+                    <button class="btn" id="rightBtn" onclick="moveDirection('right')">▶<br>RIGHT</button>
+                    <div></div>
+                    <button class="btn" id="downBtn" onclick="moveDirection('down')">▼<br>DOWN</button>
+                    <div></div>
+                </div>
+            </div>
+            
+            <div class="control-panel">
+                <h2>⚡ System Parameters</h2>
+                <div class="sliders-container">
+                    <div class="vertical-slider-group">
+                        <div class="slider-label">Battery Voltage</div>
+                        <div class="slider-value" id="voltageValue">24.5V</div>
+                        <input type="range" class="vertical-slider" id="voltageSlider" 
+                               min="22" max="25.2" step="0.1" value="24.5"
+                               orient="vertical"
+                               oninput="updateVoltage(this.value)">
+                    </div>
+                    <div class="vertical-slider-group">
+                        <div class="slider-label">Temperature</div>
+                        <div class="slider-value" id="tempValue">45°C</div>
+                        <input type="range" class="vertical-slider" id="tempSlider" 
+                               min="35" max="85" step="1" value="45"
+                               orient="vertical"
+                               oninput="updateTemperature(this.value)">
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>🔧 Special Operations</h2>
+            <div class="special-ops">
+                <button class="btn btn-charge" onclick="specialOp('charging')">🔋 CHARGING</button>
+                <button class="btn btn-special" id="powerBtn" onclick="togglePower()">⏻ POWER</button>
+                <button class="btn btn-special" onclick="specialOp('fault')">⚠️ FAULT</button>
+                <button class="btn" id="standbyBtn" onclick="specialOp('standby')">⏸️ STANDBY</button>
+                <button class="btn" id="movingBtn" onclick="specialOp('moving')">▶️ MOVING</button>
+                <button class="btn" id="scanningBtn" onclick="specialOp('scanning')">🔍 SCANNING</button>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>📊 Current Status</h2>
+            <div class="status-display">
+                <div class="status-item">
+                    <div class="status-label">Position</div>
+                    <div class="status-value" id="positionValue">50, 50</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Orientation</div>
+                    <div class="status-value" id="orientationValue">0°</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Battery</div>
+                    <div class="status-value" id="batteryValue">24.5V</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Temperature</div>
+                    <div class="status-value" id="temperatureValue">45°C</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Status</div>
+                    <div class="status-value" id="statusValue">STANDBY</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">Cycle Count</div>
+                    <div class="status-value" id="cyclesValue">0</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="message" id="message"></div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='js/control.js') }}"></script>
+</body>
+</html>
